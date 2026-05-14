@@ -1,0 +1,836 @@
+
+/**
+ * MCP Tool Form Handler
+ * Handles complex JSON Schema forms including discriminated unions (oneOf + discriminator).
+ * Supports: strings, numbers, booleans, arrays, const fields, optional (anyOf with null),
+ *           nested $ref, and platform→operation discriminated unions.
+ */
+
+document.addEventListener('DOMContentLoaded', () => {
+    const schema = window.TOOL_SCHEMA || {};
+    const root = document.getElementById('schema-form-root');
+    const modal = document.getElementById('result-modal');
+    const closeBtn = document.querySelector('.close-modal');
+    const resultPayload = document.getElementById('result-payload');
+    const toolForm = document.getElementById('tool-form');
+
+    // ─── Resolve $ref ──────────────────────────────────────────────────────────
+    function resolveDef(ref, defs) {
+        if (!ref) return null;
+        const key = ref.split('/').pop();
+        return defs[key] || null;
+    }
+
+    // ─── Create a labelled form-group ──────────────────────────────────────────
+    function makeGroup(name, label, required, fullWidth = false) {
+        const group = document.createElement('div');
+        group.className = 'form-group' + (fullWidth ? ' full-width' : '');
+        if (name) group.dataset.fieldName = name;
+
+        const lbl = document.createElement('label');
+        lbl.setAttribute('for', name || label);
+        lbl.innerHTML = `${label}${required ? ' <span class="required">*</span>' : ''}`;
+        group.appendChild(lbl);
+        return group;
+    }
+
+    // ─── Render a help text span ────────────────────────────────────────────────
+    function addHelp(group, text) {
+        if (!text) return;
+        const span = document.createElement('span');
+        span.className = 'field-help';
+        span.textContent = text;
+        group.appendChild(span);
+    }
+
+    // ─── Create a connection dropdown ──────────────────────────────────────────
+    function makeConnectionDropdown(connMeta, name = 'connection_id') {
+        const connTypes = Array.isArray(connMeta.type) ? connMeta.type : [connMeta.type || 'Service'];
+        const displayConnType = connTypes.join(' or ');
+
+        const group = makeGroup(name, `Select ${displayConnType} Connection`, true);
+        const sel = document.createElement('select');
+        sel.id = name;
+        sel.name = name;
+        sel.required = true;
+        sel.innerHTML = `<option value="">Choose a ${displayConnType} connection...</option>`;
+
+        // Mock connections - In a real app, this might fetch from an API
+        const mockConns = connTypes.flatMap(t => [
+            { id: `conn_${t.toLowerCase().replace(/\s+/g, '_')}_1`, name: `${t} Connection 1` },
+            { id: `conn_${t.toLowerCase().replace(/\s+/g, '_')}_2`, name: `${t} Connection 2` }
+        ]);
+        mockConns.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name;
+            sel.appendChild(opt);
+        });
+
+        group.appendChild(sel);
+        return group;
+    }
+
+    // ─── Build field for a single property ─────────────────────────────────────
+    function buildField(name, fieldSchema, requiredList, defs, namePrefix = '', fieldMeta = {}) {
+        const required = requiredList && requiredList.includes(name);
+        const fullId = namePrefix ? `${namePrefix}__${name}` : name;
+
+        // Resolve anyOf with null → optional field
+        let effectiveSchema = fieldSchema;
+        if (fieldSchema.anyOf) {
+            const nonNull = fieldSchema.anyOf.find(s => s.type !== 'null');
+            if (nonNull) effectiveSchema = { ...nonNull, description: fieldSchema.description, title: fieldSchema.title, default: fieldSchema.default };
+        }
+
+        const label = effectiveSchema.title || fieldSchema.title || name;
+        const desc = effectiveSchema.description || fieldSchema.description || '';
+        const defaultVal = effectiveSchema.default !== undefined ? effectiveSchema.default : fieldSchema.default;
+
+        // ── meta.fields type override ─────────────────────────────────────────
+        // If meta.fields[name].type is set, render the appropriate input widget
+        // and return early — before the schema-driven type checks below.
+        const metaType = fieldMeta.type;
+        if (metaType === 'textarea') {
+            const group = makeGroup(fullId, label, required, true);
+            const ta = document.createElement('textarea');
+            ta.id = fullId;
+            ta.name = fullId;
+            ta.placeholder = desc || '';
+            ta.rows = fieldMeta.rows || 4;
+            if (defaultVal !== undefined && defaultVal !== null) ta.value = defaultVal;
+            if (required) ta.required = true;
+            group.appendChild(ta);
+            addHelp(group, desc);
+            return group;
+        }
+        if (metaType === 'file') {
+            const group = makeGroup(fullId, label, required, true);
+            const wrapper = document.createElement('div');
+            wrapper.className = 'file-upload-wrapper';
+
+            const inp = document.createElement('input');
+            inp.type = 'file';
+            inp.id = fullId;
+            inp.name = fullId;
+            if (fieldMeta.multiple) inp.multiple = true;
+            if (fieldMeta.accept) inp.accept = fieldMeta.accept;
+            if (required) inp.required = true;
+
+            const design = document.createElement('div');
+            design.className = 'file-upload-design';
+            const hintText = fieldMeta.multiple ? 'Multiple files supported' : (fieldMeta.accept || 'Any file type');
+            design.innerHTML = `
+                <i data-lucide="upload-cloud"></i>
+                <span><strong>Click to upload</strong> or drag &amp; drop</span>
+                <span class="file-upload-hint">${hintText}</span>`;
+
+            // Update the label when files are selected
+            inp.addEventListener('change', () => {
+                const files = [...inp.files];
+                if (files.length === 0) return;
+                const names = files.map(f => f.name).join(', ');
+                design.innerHTML = `
+                    <i data-lucide="file-check"></i>
+                    <span style="font-weight:600;color:var(--accent)">${files.length > 1 ? files.length + ' files selected' : names}</span>
+                    <span class="file-upload-hint">${files.length > 1 ? names : ''}</span>`;
+                if (window.lucide) lucide.createIcons();
+            });
+
+            // Drag-and-drop visual feedback
+            wrapper.addEventListener('dragover', e => { e.preventDefault(); wrapper.classList.add('drag-over'); });
+            wrapper.addEventListener('dragleave', () => wrapper.classList.remove('drag-over'));
+            wrapper.addEventListener('drop', () => wrapper.classList.remove('drag-over'));
+
+            wrapper.appendChild(inp);
+            wrapper.appendChild(design);
+            group.appendChild(wrapper);
+            addHelp(group, desc);
+            return group;
+        }
+        if (metaType === 'datetime') {
+            const group = makeGroup(fullId, label, required);
+            const inp = document.createElement('input');
+            inp.type = 'datetime-local';
+            inp.id = fullId;
+            inp.name = fullId;
+            if (defaultVal) inp.value = defaultVal;
+            if (required) inp.required = true;
+            group.appendChild(inp);
+            addHelp(group, desc);
+            return group;
+        }
+        if (metaType === 'date') {
+            const group = makeGroup(fullId, label, required);
+            const inp = document.createElement('input');
+            inp.type = 'date';
+            inp.id = fullId;
+            inp.name = fullId;
+            if (defaultVal) inp.value = defaultVal;
+            if (required) inp.required = true;
+            group.appendChild(inp);
+            addHelp(group, desc);
+            return group;
+        }
+        if (metaType === 'color') {
+            const group = makeGroup(fullId, label, required);
+            const inp = document.createElement('input');
+            inp.type = 'color';
+            inp.id = fullId;
+            inp.name = fullId;
+            inp.value = defaultVal || '#000000';
+            group.appendChild(inp);
+            addHelp(group, desc);
+            return group;
+        }
+        if (metaType === 'email' || metaType === 'url' || metaType === 'password') {
+            const group = makeGroup(fullId, label, required);
+            const inp = document.createElement('input');
+            inp.type = metaType;
+            inp.id = fullId;
+            inp.name = fullId;
+            inp.placeholder = desc || '';
+            if (defaultVal !== undefined && defaultVal !== null) inp.value = defaultVal;
+            if (required) inp.required = true;
+            group.appendChild(inp);
+            addHelp(group, desc);
+            return group;
+        }
+
+        // const → read-only display badge
+        if ('const' in fieldSchema || 'const' in effectiveSchema) {
+            const constVal = fieldSchema.const !== undefined ? fieldSchema.const : effectiveSchema.const;
+            const group = makeGroup(fullId, label, false);
+            const badge = document.createElement('span');
+            badge.className = 'const-field';
+            badge.innerHTML = `<i data-lucide="lock" style="width:13px;height:13px;"></i> ${constVal}`;
+            // Store as hidden so it's submitted
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = fullId;
+            hidden.value = constVal;
+            group.appendChild(badge);
+            group.appendChild(hidden);
+            addHelp(group, desc);
+            return group;
+        }
+
+        // enum → select
+        if (effectiveSchema.enum) {
+            const group = makeGroup(fullId, label, required);
+            const sel = document.createElement('select');
+            sel.id = fullId;
+            sel.name = fullId;
+            if (required) sel.required = true;
+            sel.innerHTML = `<option value="">Select ${label}...</option>`;
+            effectiveSchema.enum.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                if (defaultVal === v) opt.selected = true;
+                sel.appendChild(opt);
+            });
+            group.appendChild(sel);
+            addHelp(group, desc);
+            return group;
+        }
+
+        // boolean → select
+        if (effectiveSchema.type === 'boolean') {
+            const group = makeGroup(fullId, label, required);
+            const sel = document.createElement('select');
+            sel.id = fullId;
+            sel.name = fullId;
+            if (required) sel.required = true;
+            sel.innerHTML = `
+                <option value="">Select...</option>
+                <option value="true" ${defaultVal === true ? 'selected' : ''}>True</option>
+                <option value="false" ${defaultVal === false ? 'selected' : ''}>False</option>
+            `;
+            group.appendChild(sel);
+            addHelp(group, desc);
+            return group;
+        }
+
+        // integer / number
+        if (effectiveSchema.type === 'integer' || effectiveSchema.type === 'number') {
+            const group = makeGroup(fullId, label, required);
+            const inp = document.createElement('input');
+            inp.type = 'number';
+            inp.id = fullId;
+            inp.name = fullId;
+            inp.placeholder = desc || '';
+            if (defaultVal !== undefined) inp.value = defaultVal;
+            if (required) inp.required = true;
+            group.appendChild(inp);
+            addHelp(group, desc);
+            return group;
+        }
+
+        // array
+        if (effectiveSchema.type === 'array') {
+            const group = makeGroup(fullId, label, required, true);
+            const wrapper = document.createElement('div');
+            wrapper.className = 'array-input-wrapper';
+            const row = document.createElement('div');
+            row.className = 'array-input-row';
+            const arrInput = document.createElement('input');
+            arrInput.type = 'text';
+            arrInput.placeholder = 'Type a value and press Add';
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'btn-secondary';
+            addBtn.textContent = '+ Add';
+            row.appendChild(arrInput);
+            row.appendChild(addBtn);
+            const itemsList = document.createElement('div');
+            itemsList.className = 'items-list';
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = fullId;
+            hidden.value = '[]';
+            wrapper.appendChild(row);
+            wrapper.appendChild(itemsList);
+            wrapper.appendChild(hidden);
+
+            addBtn.addEventListener('click', () => {
+                const val = arrInput.value.trim();
+                if (!val) return;
+                const curr = JSON.parse(hidden.value);
+                curr.push(val);
+                hidden.value = JSON.stringify(curr);
+                const tag = document.createElement('span');
+                tag.className = 'array-tag';
+                tag.innerHTML = `${val} <i data-lucide="x" class="remove-item"></i>`;
+                itemsList.appendChild(tag);
+                tag.querySelector('.remove-item').addEventListener('click', () => {
+                    const updated = JSON.parse(hidden.value).filter(v => v !== val);
+                    hidden.value = JSON.stringify(updated);
+                    tag.remove();
+                });
+                arrInput.value = '';
+                if (window.lucide) lucide.createIcons();
+            });
+
+            group.appendChild(wrapper);
+            addHelp(group, desc);
+            return group;
+        }
+
+        // default: string text input
+        const group = makeGroup(fullId, label, required);
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.id = fullId;
+        inp.name = fullId;
+        inp.placeholder = desc || '';
+        if (defaultVal !== undefined && defaultVal !== null) inp.value = defaultVal;
+        if (required) inp.required = true;
+        group.appendChild(inp);
+        addHelp(group, desc);
+        return group;
+    }
+
+    // ─── Render a flat object's properties into a grid ─────────────────────────
+    function buildObjectFields(objSchema, defs, container, namePrefix = '', skipKeys = []) {
+        if (!objSchema || !objSchema.properties) return;
+        const props = objSchema.properties;
+        const reqList = objSchema.required || [];
+        const grid = document.createElement('div');
+        grid.className = 'fields-grid';
+        // Lookup meta.fields once for this render pass
+        const metaFields = (window.TOOL_META && window.TOOL_META.fields) || {};
+
+        Object.entries(props).forEach(([name, fieldSchema]) => {
+            if (skipKeys.includes(name)) return;
+            // Resolve $ref
+            let resolved = fieldSchema;
+            if (fieldSchema.$ref) {
+                resolved = resolveDef(fieldSchema.$ref, defs) || fieldSchema;
+            }
+            // Pass per-field meta (e.g. { type: 'file', multiple: true })
+            const fieldMeta = metaFields[name] || {};
+            const fieldEl = buildField(name, resolved, reqList, defs, namePrefix, fieldMeta);
+            if (fieldEl) grid.appendChild(fieldEl);
+        });
+
+        container.appendChild(grid);
+    }
+
+    // ─── Post-render sweep helper ───────────────────────────────────────────────
+    // Removes any rendered form groups whose field name is in skipFields.
+    // Called both after initial render and after every dynamic discriminated-union re-render.
+    function sweepSkipFields(container, skipFields) {
+        if (!skipFields || skipFields.length === 0) return;
+        skipFields.forEach(fieldName => {
+            container.querySelectorAll(`[data-field-name="${fieldName}"]`).forEach(el => el.remove());
+        });
+        // Remove any sections / op-fields-sections left empty after the sweep
+        container.querySelectorAll('.schema-section, .op-fields-section').forEach(section => {
+            const grid = section.querySelector('.fields-grid');
+            if (grid && grid.children.length === 0) section.remove();
+        });
+    }
+
+    // ─── Discriminated Union Renderer ──────────────────────────────────────────
+    // Handles schemas with discriminator.propertyName and oneOf / mapping.
+    // skipFields is propagated so credential fields are hidden on every re-render.
+    function buildDiscriminatedUnion(payloadSchema, defs, container, level = 1, skipFields = [], connections = []) {
+        const discriminator = payloadSchema.discriminator;
+        if (!discriminator) return false;
+
+        const propName = discriminator.propertyName; // e.g. "platform"
+        const mapping = discriminator.mapping || {};
+        const options = Object.keys(mapping);
+
+        // Step container
+        const step = document.createElement('div');
+        step.className = 'discriminator-step';
+
+        const stepLabel = document.createElement('div');
+        stepLabel.className = 'step-label';
+        stepLabel.innerHTML = `<span class="step-badge">${level}</span> Select ${propName.charAt(0).toUpperCase() + propName.slice(1)}`;
+        step.appendChild(stepLabel);
+
+        // Select for the discriminator property
+        const sel = document.createElement('select');
+        sel.id = `disc_${propName}_${level}`;
+        sel.name = propName;
+        sel.innerHTML = `<option value="">Choose ${propName}...</option>`;
+        options.forEach(opt => {
+            const o = document.createElement('option');
+            o.value = opt;
+            o.textContent = opt;
+            sel.appendChild(o);
+        });
+        step.appendChild(sel);
+        container.appendChild(step);
+
+        // Placeholder where nested content will be inserted
+        const nested = document.createElement('div');
+        nested.id = `disc_nested_${propName}_${level}`;
+        container.appendChild(nested);
+
+        sel.addEventListener('change', () => {
+            nested.innerHTML = '';
+            const chosen = sel.value;
+            if (!chosen) return;
+
+            const mappingValue = mapping[chosen];
+            if (!mappingValue) return;
+
+            // Merge discriminator propName + caller's skipFields into one skip list
+            const mergedSkip = [propName, ...skipFields.filter(f => f !== propName)];
+
+            // mappingValue is either:
+            // (a) a string "$ref" like "#/$defs/SomeModel"
+            // (b) an object with another discriminator (nested level)
+            if (typeof mappingValue === 'string') {
+                // direct $ref → render its fields
+                const def = resolveDef(mappingValue, defs);
+                if (def) {
+                    const section = document.createElement('div');
+                    section.className = 'op-fields-section';
+                    const title = document.createElement('h3');
+                    title.className = 'section-title';
+                    title.textContent = def.title || chosen;
+                    section.appendChild(title);
+
+                    // Contextual Connections based on dependency
+                    connections.forEach(c => {
+                        if (c.dependency === chosen) {
+                            const connName = connections.length > 1 ? `connection_id_${(c.type || 'service').toLowerCase()}` : 'connection_id';
+                            const connEl = makeConnectionDropdown(c, connName);
+                            section.appendChild(connEl);
+                        }
+                    });
+
+                    buildObjectFields(def, defs, section, '', mergedSkip);
+                    nested.appendChild(section);
+                    // Safety sweep: remove any remaining skip-fields after re-render
+                    sweepSkipFields(nested, skipFields);
+                    if (window.lucide) lucide.createIcons();
+                }
+            } else if (typeof mappingValue === 'object' && mappingValue.discriminator) {
+                // Nested discriminated union (e.g. platform → then operation)
+                buildDiscriminatedUnion(mappingValue, defs, nested, level + 1, skipFields, connections);
+                if (window.lucide) lucide.createIcons();
+            }
+        });
+
+        return true;
+    }
+
+    // ─── Main render entry point ────────────────────────────────────────────────
+    function renderForm(schema) {
+        root.innerHTML = '';
+        if (!schema || Object.keys(schema).length === 0) {
+            root.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:2rem;">This tool has no input parameters.</p>';
+            return;
+        }
+
+        const meta = window.TOOL_META || {};
+        let skipFields = [];
+
+        let connections = [];
+
+        // Handle connection_name meta to replace fields with connection dropdown
+        if (meta.connection_name) {
+            const rawConns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
+            connections = rawConns.map(c => {
+                const rawFields = c.fields || Object.keys(c).filter(k => k !== 'type' && k !== 'fields' && k !== 'dependency');
+                const fields = Array.isArray(rawFields) ? rawFields : String(rawFields).split(',').map(s => s.trim()).filter(Boolean);
+                fields.forEach(f => { if (!skipFields.includes(f)) skipFields.push(f); });
+                return { ...c, fields };
+            });
+
+            // Render top-level connections (no dependency)
+            connections.forEach(c => {
+                if (!c.dependency) {
+                    const connSection = document.createElement('div');
+                    connSection.className = 'schema-section connection-section';
+                    const h3 = document.createElement('h3');
+                    h3.className = 'section-title';
+                    h3.innerHTML = `<i data-lucide="link" style="width:16px;height:16px;vertical-align:middle;margin-right:8px;"></i>${c.type || 'Service'} Connection`;
+                    connSection.appendChild(h3);
+
+                    const connName = connections.length > 1 ? `connection_id_${(c.type || 'service').toLowerCase()}` : 'connection_id';
+                    const connEl = makeConnectionDropdown(c, connName);
+                    connSection.appendChild(connEl);
+                    root.appendChild(connSection);
+                }
+            });
+        }
+
+        // Also handle direct hidden_property on the meta (e.g. "twilio_account_sid,twilio_auth_token,...")
+        if (meta.hidden_property) {
+            const hiddenList = Array.isArray(meta.hidden_property)
+                ? meta.hidden_property
+                : String(meta.hidden_property).split(',').map(s => s.trim()).filter(Boolean);
+            hiddenList.forEach(f => { if (!skipFields.includes(f)) skipFields.push(f); });
+        }
+
+        updateMetadataDisplay(skipFields);
+
+        const defs = schema.$defs || schema.definitions || {};
+        const properties = schema.properties || {};
+        const required = schema.required || [];
+
+        // Iterate top-level properties
+        Object.entries(properties).forEach(([propName, propSchema]) => {
+            if (skipFields.includes(propName)) return;
+
+            // Resolve $ref at top level
+            let resolved = propSchema;
+            if (propSchema.$ref) {
+                resolved = resolveDef(propSchema.$ref, defs) || propSchema;
+            }
+
+            // Check if this property is itself a discriminated union (oneOf + discriminator)
+            if (resolved.discriminator || (resolved.oneOf && resolved.discriminator)) {
+                const section = document.createElement('div');
+                section.className = 'schema-section';
+                root.appendChild(section);
+                buildDiscriminatedUnion(resolved, defs, section, 1, skipFields, connections);
+                return;
+            }
+
+            // Check if it's a plain object (also handle schemas that omit explicit "type":"object")
+            if (resolved.properties && (resolved.type === 'object' || !resolved.type)) {
+                const section = document.createElement('div');
+                section.className = 'schema-section';
+                const h3 = document.createElement('h3');
+                h3.className = 'section-title';
+                h3.textContent = resolved.title || propName;
+                section.appendChild(h3);
+                buildObjectFields(resolved, defs, section, '', skipFields);
+                root.appendChild(section);
+                return;
+            }
+
+            // Flat field
+            const section = document.createElement('div');
+            section.className = 'schema-section';
+            const fieldEl = buildField(propName, resolved, required, defs);
+            if (fieldEl) section.appendChild(fieldEl);
+            root.appendChild(section);
+        });
+
+        // ── Post-render safety sweep (initial render) ────────────────────────
+        sweepSkipFields(root, skipFields);
+
+        if (window.lucide) lucide.createIcons();
+    }
+
+    // ─── Collect nested form values ─────────────────────────────────────────────
+    // Builds a nested JSON object from flat `name__subname` field convention
+    function collectFormData() {
+        const formData = new FormData(toolForm);
+        const flat = {};
+        formData.forEach((value, key) => {
+            let parsed = value;
+            try { parsed = JSON.parse(value); } catch (_) { }
+            flat[key] = parsed;
+        });
+        return flat;
+    }
+
+    // ─── Form submit ────────────────────────────────────────────────────────────
+    toolForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const submitBtn = document.getElementById('submit-btn');
+        const orig = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="loading-spinner"></span> <span>Running...</span>';
+
+        try {
+            const payload = collectFormData();
+            const response = await fetch(toolForm.action, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            resultPayload.textContent = JSON.stringify(data, null, 2);
+            modal.classList.add('active');
+        } catch (err) {
+            resultPayload.textContent = JSON.stringify({ error: err.message }, null, 2);
+            modal.classList.add('active');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = orig;
+            if (window.lucide) lucide.createIcons();
+        }
+    });
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => modal.classList.remove('active'));
+    }
+
+    // ─── Metadata Export Logic ──────────────────────────────────────────────────
+    function generateDisplayProperties(schema, skipFields, meta) {
+        const displayProps = [];
+        const defs = schema.$defs || schema.definitions || {};
+        const propMap = new Map();
+        const allFoundOps = new Set();
+        let discriminatorPropertyName = null;
+
+        function slugify(s) {
+            return String(s || '').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        }
+
+        // Helper to add connection property to propMap at the right time (for ordering)
+        function addConnectionProp(c, idx, opValue = null) {
+            const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
+            const connType = c.type || meta.category || 'Service';
+            const displayConnType = Array.isArray(connType) ? connType.join(', ') : connType;
+            const propName = conns.length > 1 ? `Credential_${(c.type || idx).toString().replace(/\s+/g, '_')}` : "Credential";
+
+            if (!propMap.has(propName)) {
+                propMap.set(propName, {
+                    "type": ["connection"],
+                    "title": `Select ${displayConnType} Connection`,
+                    "required": true,
+                    "description": `Choose a ${displayConnType} connection...`,
+                    "propertyName": propName,
+                    "connection_value": connType,
+                    "used_in_operations": new Set()
+                });
+            }
+            if (opValue) {
+                propMap.get(propName).used_in_operations.add(opValue);
+            }
+        }
+
+        // 1. Connection properties (Top-level/Global only - Added at start)
+        if (meta && meta.connection_name) {
+            const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
+            conns.forEach((c, idx) => {
+                if (!c.dependency) addConnectionProp(c, idx);
+            });
+        }
+
+        function addOrUpdateProp(name, resolved, required, prefix, opValue = null) {
+            const propName = prefix + name;
+            if (skipFields.includes(name)) return;
+
+            if (!propMap.has(propName)) {
+                // Base type from schema
+                let type = Array.isArray(resolved.type) ? resolved.type : (resolved.type ? [resolved.type] : ['string']);
+                // Override type from meta.fields if defined (e.g. 'file', 'textarea', 'datetime')
+                const fieldMetaType = meta && meta.fields && meta.fields[name] && meta.fields[name].type;
+                if (fieldMetaType) type = [fieldMetaType];
+                propMap.set(propName, {
+                    type: type,
+                    title: resolved.title || name,
+                    required: required,
+                    description: resolved.description || '',
+                    propertyName: propName,
+                    used_in_operations: new Set()
+                });
+                if (resolved.enum) propMap.get(propName).enum = resolved.enum;
+                if (resolved.default !== undefined) propMap.get(propName).default = resolved.default;
+                if (resolved.const !== undefined) {
+                    // If it's a const and matches an operation value, it's likely the discriminator
+                    // We'll handle this in the final pass if we found the discriminator path
+                }
+            } else if (required) {
+                propMap.get(propName).required = true;
+            }
+
+            if (opValue) {
+                propMap.get(propName).used_in_operations.add(opValue);
+                allFoundOps.add(opValue);
+            }
+        }
+
+        function walk(currentSchema, prefix = '', opValue = null) {
+            if (!currentSchema) return;
+
+            let resolved = currentSchema;
+            if (currentSchema.$ref) {
+                resolved = resolveDef(currentSchema.$ref, defs) || currentSchema;
+            }
+
+            // Detect discriminator property name
+            if (resolved.discriminator && resolved.discriminator.propertyName) {
+                discriminatorPropertyName = prefix + resolved.discriminator.propertyName;
+            }
+
+            // Handle properties in current level
+            if (resolved.properties) {
+                // Add connections that depend on the current opValue (Selection contextual) - At the start of the module
+                if (meta && meta.connection_name && opValue) {
+                    const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
+                    const opSlug = slugify(opValue);
+                    conns.forEach((c, idx) => {
+                        if (c.dependency && slugify(c.dependency) === opSlug) addConnectionProp(c, idx, opValue);
+                    });
+                }
+
+                const requiredList = resolved.required || [];
+                Object.entries(resolved.properties).forEach(([name, propSchema]) => {
+                    let pResolved = propSchema;
+                    if (propSchema.$ref) pResolved = resolveDef(propSchema.$ref, defs) || propSchema;
+
+                    if (pResolved.type === 'object' && pResolved.properties) {
+                        walk(pResolved, prefix + name + '__', opValue);
+                    } else if (pResolved.discriminator) {
+                        walk(pResolved, prefix + name + '__', opValue);
+                    } else {
+                        addOrUpdateProp(name, pResolved, requiredList.includes(name), prefix, opValue);
+                    }
+                });
+            }
+
+            // Handle Discriminated Union
+            if (resolved.discriminator && resolved.discriminator.mapping) {
+                const mapping = resolved.discriminator.mapping;
+                Object.entries(mapping).forEach(([val, ref]) => {
+                    walk({ $ref: ref }, prefix, val);
+                });
+            } else if (resolved.oneOf || resolved.anyOf) {
+                const variants = resolved.oneOf || resolved.anyOf;
+                variants.forEach(v => walk(v, prefix, opValue));
+            }
+        }
+
+        walk(schema);
+
+        // Final pass: Convert Set to Array and handle common fields
+        const allOpsArray = Array.from(allFoundOps);
+        propMap.forEach((prop, name) => {
+            if (name.startsWith("Credential")) {
+                if (prop.used_in_operations && prop.used_in_operations.size > 0) {
+                    prop.used_in_operations = Array.from(prop.used_in_operations);
+                } else {
+                    delete prop.used_in_operations;
+                }
+                displayProps.push(prop);
+                return;
+            }
+
+            // If this is the discriminator field, set its enum to all supported operations
+            if (name === discriminatorPropertyName || (prop.enum && prop.enum.some(v => allFoundOps.has(v))) || (prop.const && allFoundOps.has(prop.const))) {
+                prop.enum = allOpsArray;
+                prop.propertyName = "operations"; // Force fixed property name for discriminator
+                if (prop.const) delete prop.const;
+                delete prop.used_in_operations;
+            } else {
+                // If the property was found in the root (opValue was null) AND we have operations,
+                // it's likely used in all operations.
+                if (prop.used_in_operations.size === 0 && allOpsArray.length > 0) {
+                    prop.used_in_operations = allOpsArray;
+                } else if (prop.used_in_operations.size > 0) {
+                    prop.used_in_operations = Array.from(prop.used_in_operations);
+                } else {
+                    delete prop.used_in_operations;
+                }
+            }
+            displayProps.push(prop);
+        });
+
+        return displayProps;
+    }
+
+    function updateMetadataDisplay(skipFields) {
+        const meta = window.TOOL_META || {};
+        console.log('window.TOOL_METAwindow.TOOL_METAwindow.TOOL_META', window.TOOL_META)
+
+        const schema = window.TOOL_SCHEMA || {};
+        const displayProps = generateDisplayProperties(schema, skipFields, meta);
+
+        const hasMultiOp = !!(schema.properties && Object.values(schema.properties).some(p => {
+            let res = p;
+            if (p.$ref) res = resolveDef(p.$ref, schema.$defs || schema.definitions || {}) || p;
+            return res.discriminator || res.oneOf;
+        }));
+
+        const exportObj = {
+            "name": window.TOOL_NAME,
+            "type": "tool",
+            "title": meta.display_name || window.TOOL_NAME,
+            "description": window.TOOL_DESCRIPTION || "",
+            "tool_description": window.TOOL_DESCRIPTION || "",
+            "properties": schema,
+            "display_description": window.TOOL_DESCRIPTION || "",
+            "display_properties": displayProps,
+            "connection_string": meta.connection_name 
+                ? { "type": "connection", "value": Array.isArray(meta.connection_name) 
+                    ? meta.connection_name.map(c => c.type).join(', ') 
+                    : (meta.connection_name.type || meta.category || "Service") } 
+                : null,
+            "category_name": meta.category || "Uncategorized",
+            "server": "Caregence-MCP-Server",
+            "server_url": window.SSE_URL || "",
+            "icon": meta.icon || "box",
+            "output_schema": null,
+            "hidden_property": skipFields.join(','),
+            "has_multi_operation": hasMultiOp
+        };
+
+        const pre = document.getElementById('metadata-json');
+        if (pre) {
+            pre.textContent = JSON.stringify(exportObj, null, 2);
+        }
+    }
+
+    const copyBtn = document.getElementById('copy-metadata-btn');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            const json = document.getElementById('metadata-json').textContent;
+            navigator.clipboard.writeText(json).then(() => {
+                const orig = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i data-lucide="check" style="width:16px; height:16px;"></i> <span>Copied!</span>';
+                if (window.lucide) lucide.createIcons();
+                setTimeout(() => {
+                    copyBtn.innerHTML = orig;
+                    if (window.lucide) lucide.createIcons();
+                }, 2000);
+            });
+        });
+    }
+
+    // ─── Boot ───────────────────────────────────────────────────────────────────
+    renderForm(schema);
+});

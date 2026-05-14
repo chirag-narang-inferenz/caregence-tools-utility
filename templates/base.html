@@ -1,0 +1,59 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ToolBox | MCP Utility</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo">
+                <i data-lucide="box" class="logo-icon"></i>
+                <span>ToolBox</span>
+            </div>
+            <nav class="nav-links">
+                <a href="/" class="nav-item {{ 'active' if request.path == '/' else '' }}">
+                    <i data-lucide="layout-grid"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/tools-page" class="nav-item {{ 'active' if request.path == '/tools-page' else '' }}">
+                    <i data-lucide="wrench"></i>
+                    <span>Tools</span>
+                </a>
+                <a href="/settings" class="nav-item {{ 'active' if request.path == '/settings' else '' }}">
+                    <i data-lucide="settings"></i>
+                    <span>Settings</span>
+                </a>
+            </nav>
+        </aside>
+        
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="search-bar">
+                    <i data-lucide="search"></i>
+                    <input type="text" placeholder="Search tools...">
+                </div>
+                <div class="user-profile">
+                    <div class="avatar">C</div>
+                </div>
+            </header>
+            
+            <section class="content-area">
+                {% block content %}{% endblock %}
+            </section>
+        </main>
+    </div>
+    
+    <script>
+      lucide.createIcons();
+    </script>
+    <script src="{{ url_for('static', filename='js/form-handler.js') }}"></script>
+</body>
+</html>

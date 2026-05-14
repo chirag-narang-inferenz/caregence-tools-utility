@@ -1,0 +1,78 @@
+
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="/tools-page"><i data-lucide="wrench" style="width:14px;height:14px;"></i> Tools</a>
+    <i data-lucide="chevron-right" style="width:14px;height:14px;"></i>
+    <span>{{ tool.meta.display_name if tool.meta and tool.meta.display_name else tool.name }}</span>
+</div>
+
+<div class="form-container">
+    <div class="form-header">
+        <div class="tool-badge">
+            <i data-lucide="{{ tool.meta.icon if tool.meta and tool.meta.icon else 'box' }}"></i>
+        </div>
+        <div>
+            <h1>{{ tool.meta.display_name if tool.meta and tool.meta.display_name else tool.name }}</h1>
+            <p>{{ tool.description | replace('\n', ' ') | truncate(200) }}</p>
+        </div>
+    </div>
+
+    <form id="tool-form" action="/execute/{{ tool.name }}" method="POST" enctype="multipart/form-data">
+        <div id="schema-form-root">
+            <!-- Rendered dynamically by form-handler.js -->
+            <div style="text-align:center; padding:2rem; color:var(--text-muted);">
+                <span class="loading-spinner" style="border-top-color:var(--accent); border-color:var(--border);"></span>
+                <p style="margin-top:8px; font-size:0.875rem;">Building form...</p>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button type="reset" class="btn-outline">Reset</button>
+            <button type="submit" class="btn-primary" id="submit-btn">
+                <i data-lucide="play"></i>
+                <span>Run Tool</span>
+            </button>
+        </div>
+    </form>
+
+    <!-- Metadata Export Section -->
+    <div class="metadata-export" style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h2 style="font-size: 1.125rem; font-weight: 600; color: var(--text);">Tool Metadata JSON</h2>
+            <button id="copy-metadata-btn" class="btn-secondary" style="padding: 0.5rem 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                <i data-lucide="copy" style="width:16px; height:16px;"></i>
+                <span>Copy JSON</span>
+            </button>
+        </div>
+        <div style="position: relative;">
+            <pre id="metadata-json" style="background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.8125rem; color: var(--text-muted); max-height: 400px;"></pre>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.SSE_URL = {{ sse_url | tojson | safe if sse_url else '""' }};
+</script>
+
+<!-- Result Modal -->
+<div id="result-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Execution Result</h2>
+            <button class="close-modal">&times;</button>
+        </div>
+        <pre id="result-payload"></pre>
+    </div>
+</div>
+
+<!-- Pass raw schema to JavaScript -->
+<script>
+    window.TOOL_SCHEMA = {{ raw_schema_json | safe }};
+    window.TOOL_NAME = {{ tool.name | tojson }};
+    window.TOOL_DESCRIPTION = {{ tool.description | tojson }};
+    window.TOOL_META = {{ tool.meta | tojson | safe if tool.meta else '{}' }};
+</script>
+<script src="{{ url_for('static', filename='js/form-handler.js') }}"></script>
+{% endblock %}

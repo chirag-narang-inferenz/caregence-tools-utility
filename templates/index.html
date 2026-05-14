@@ -1,0 +1,31 @@
+
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Cloud Infrastructure Tools</h1>
+    <p>Manage your AWS S3 resources with specialized micro-utilities.</p>
+</div>
+
+<div class="tools-grid">
+    {% for tool in tools %}
+    <a href="/tool/{{ tool.name }}" class="tool-card">
+        <div class="card-glow"></div>
+        <div class="tool-icon-wrapper">
+            <i data-lucide="{{ tool.meta.icon }}"></i>
+        </div>
+        <div class="tool-info">
+            <h3>{{ tool.meta.display_name }}</h3>
+            <p>{{ tool.description.split('.')[0] }}.</p>
+            <div class="tool-meta">
+                <span class="category-tag">{{ tool.meta.category }}</span>
+            </div>
+        </div>
+        <div class="card-action">
+            <span>Open Tool</span>
+            <i data-lucide="arrow-right"></i>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}

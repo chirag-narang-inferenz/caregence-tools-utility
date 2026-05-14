@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+            <h1>MCP Tools</h1>
+            <p>Browse and interact with tools from <code
+                    style="background:rgba(255,255,255,0.07); padding:2px 8px; border-radius:6px; font-size:0.85rem;">{{ sse_url }}</code>
+            </p>
+        </div>
+        <button id="sync-btn" class="btn-primary" style="white-space:nowrap; flex-shrink:0;">
+            <i data-lucide="refresh-cw"></i>
+            <span>Sync Tools</span>
+        </button>
+    </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar glass"
+    style="padding:1rem 1.5rem; border-radius:var(--radius-lg); margin-bottom:1.5rem; display:flex; gap:1rem; align-items:center;">
+    <i data-lucide="search" style="color:var(--text-secondary);"></i>
+    <input type="text" id="search-input" placeholder="Search tools..."
+        style="background:none; border:none; color:rgb(13, 12, 12); outline:none; width:100%; font-size:1rem;">
+    <div id="tool-count" style="white-space:nowrap; font-size:0.85rem; color:var(--text-secondary);">{{ tools|length }}
+        tools</div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loading-overlay" class="hidden" style="text-align:center; padding:4rem;">
+    <span class="loading-spinner" style="width:40px; height:40px; border-width:3px;"></span>
+    <p style="margin-top:1rem; color:var(--text-secondary);">Connecting to MCP server...</p>
+</div>
+
+<!-- Toast Notification -->
+<div id="toast" class="hidden"
+    style="position:fixed; top:20px; right:20px; padding:14px 22px; border-radius:12px; z-index:1000; font-weight:500; box-shadow:0 10px 30px rgba(0,0,0,0.3); transition:all 0.3s;">
+</div>
+
+<!-- Tools Grid -->
+<div id="tools-grid" class="tools-grid">
+    {% for tool in tools %}
+    <a href="/tool/{{ tool.name }}" class="tool-card" data-name="{{ tool.name }}" data-desc="{{ tool.description }}">
+        <div class="card-glow"></div>
+        <div class="tool-icon-wrapper">
+            <i data-lucide="{{ tool.meta.icon if tool.meta and tool.meta.icon else 'box' }}"></i>
+        </div>
+        <div class="tool-info">
+            <h3>{{ tool.meta.display_name if tool.meta and tool.meta.display_name else tool.name }}</h3>
+            <p>{{ tool.description[:120] ~ '...' if tool.description and tool.description|length > 120 else
+                tool.description or 'No description.' }}</p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:0.5rem;">
+                <span class="category-tag">{{ tool.meta.category if tool.meta and tool.meta.category else 'MCP'
+                    }}</span>
+            </div>
+        </div>
+        <div class="card-action">
+            <span>Open Form</span>
+            <i data-lucide="arrow-right"></i>
+        </div>
+    </a>
+    {% else %}
+    <div id="empty-state" style="grid-column:1/-1; text-align:center; padding:4rem 2rem; opacity:0.6;">
+        <i data-lucide="package-open" style="width:64px; height:64px; color:var(--accent); margin-bottom:1rem;"></i>
+        <h2 style="font-family:var(--font-heading); margin-bottom:0.5rem;">No Tools Found</h2>
+        <p>Click <strong>Sync Tools</strong> above to load tools from your MCP server.</p>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- No results state (shown by JS) -->
+<div id="no-results" class="hidden" style="text-align:center; padding:4rem; opacity:0.6;">
+    <i data-lucide="search-x" style="width:48px; height:48px; color:var(--text-secondary); margin-bottom:1rem;"></i>
+    <p>No tools match your search.</p>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const syncBtn = document.getElementById('sync-btn');
+        const toolsGrid = document.getElementById('tools-grid');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const toolCount = document.getElementById('tool-count');
+        const searchInput = document.getElementById('search-input');
+        const toast = document.getElementById('toast');
+        const noResults = document.getElementById('no-results');
+
+        function showToast(message, type = 'success') {
+            toast.textContent = message;
+            toast.style.background = type === 'success' ? '#10b981' : '#ef4444';
+            toast.style.color = 'white';
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3000);
+        }
+
+        function createToolCard(tool) {
+            const icon = (tool.meta && tool.meta.icon) ? tool.meta.icon : 'box';
+            const displayName = (tool.meta && tool.meta.display_name) ? tool.meta.display_name : tool.name;
+            const category = (tool.meta && tool.meta.category) ? tool.meta.category : 'MCP';
+            const desc = tool.description || 'No description.';
+            const shortDesc = desc.length > 120 ? desc.substring(0, 120) + '...' : desc;
+
+            const card = document.createElement('a');
+            card.href = `/tool/${tool.name}`;
+            card.className = 'tool-card';
+            card.dataset.name = tool.name;
+            card.dataset.desc = desc.toLowerCase();
+            card.innerHTML = `
+            <div class="card-glow"></div>
+            <div class="tool-icon-wrapper"><i data-lucide="${icon}"></i></div>
+            <div class="tool-info">
+                <h3>${displayName}</h3>
+                <p>${shortDesc}</p>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:0.5rem;">
+                    <span class="category-tag">${category}</span>
+                </div>
+            </div>
+            <div class="card-action">
+                <span>Open Form</span>
+                <i data-lucide="arrow-right"></i>
+            </div>
+        `;
+            return card;
+        }
+
+        syncBtn.addEventListener('click', async () => {
+            syncBtn.disabled = true;
+            syncBtn.innerHTML = '<span class="loading-spinner"></span> <span>Syncing...</span>';
+            toolsGrid.classList.add('hidden');
+            loadingOverlay.classList.remove('hidden');
+
+            try {
+                // Get current SSE URL from the settings API
+                const settingsResp = await fetch('/api/settings');
+                const settings = await settingsResp.json();
+                const sseUrl = settings.sse_url;
+
+                const response = await fetch('/fetch-tools', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: sseUrl })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    // Re-render the tools grid
+                    toolsGrid.innerHTML = '';
+                    data.tools.forEach(tool => {
+                        toolsGrid.appendChild(createToolCard(tool));
+                    });
+                    toolCount.textContent = `${data.tools.length} tools`;
+                    showToast(`✓ Synced ${data.tools.length} tools successfully!`);
+                    lucide.createIcons();
+                } else {
+                    throw new Error(data.error || 'Sync failed');
+                }
+            } catch (e) {
+                showToast(`Error: ${e.message}`, 'error');
+            } finally {
+                loadingOverlay.classList.add('hidden');
+                toolsGrid.classList.remove('hidden');
+                syncBtn.disabled = false;
+                syncBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Sync Tools</span>';
+                lucide.createIcons();
+            }
+        });
+
+        // Search / filter
+        searchInput.addEventListener('input', () => {
+            const query = searchInput.value.toLowerCase();
+            const cards = toolsGrid.querySelectorAll('.tool-card');
+            let visible = 0;
+
+            cards.forEach(card => {
+                const name = (card.dataset.name || '').toLowerCase();
+                const desc = (card.dataset.desc || '').toLowerCase();
+                if (name.includes(query) || desc.includes(query)) {
+                    card.style.display = '';
+                    visible++;
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+
+            toolCount.textContent = `${visible} tools`;
+            noResults.classList.toggle('hidden', visible > 0 || cards.length === 0);
+        });
+    });
+</script>
+{% endblock %}
