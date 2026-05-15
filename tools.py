@@ -48,7 +48,6 @@ TOOLS = [
         "display_name": "List S3 Buckets",
         "icon": "database",
         "category": "AWS",
-        "description": "List all S3 buckets accessible with the provided credentials.",
         "connection_name": {
           "type": "S3",
           "fields": ["aws_access_key_id", "aws_secret_access_key", "region_name"]
@@ -109,7 +108,6 @@ TOOLS = [
         "display_name": "List Files in S3 Bucket",
         "icon": "folder-open",
         "category": "AWS",
-        "description": "List all files in a specific S3 bucket.",
         "connection_name": {
           "type": "S3",
           "fields": ["aws_access_key_id", "aws_secret_access_key", "region_name"]
@@ -207,7 +205,6 @@ TOOLS = [
         "display_name": "Upload File to S3",
         "icon": "file-up",
         "category": "AWS",
-        "description": "Upload a file to an S3 bucket.",
         "connection_name": {
           "type": "S3",
           "fields": ["aws_access_key_id", "aws_secret_access_key", "region_name"]
@@ -282,7 +279,6 @@ TOOLS = [
         "display_name": "Get S3 File Metadata",
         "icon": "file-search",
         "category": "AWS",
-        "description": "Get metadata for a specific file in S3.",
         "field_meta": {
           "bucket": {
             "type": "bucket"
@@ -363,7 +359,6 @@ TOOLS = [
         "display_name": "Download File from S3",
         "icon": "file-down",
         "category": "AWS",
-        "description": "Download a file from S3 to a local path.",
         "field_meta": {
           "bucket": {
             "type": "bucket"
@@ -447,7 +442,6 @@ TOOLS = [
         "display_name": "Batch Upload Files to S3",
         "icon": "files",
         "category": "AWS",
-        "description": "Upload multiple files to an S3 bucket under a workflow/session path.",
         "field_meta": {
           "bucket": {
             "type": "bucket"

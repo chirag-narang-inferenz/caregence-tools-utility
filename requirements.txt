@@ -1,0 +1,6 @@
+flask
+flask-cors
+mcp
+asyncio
+
+# boto3
