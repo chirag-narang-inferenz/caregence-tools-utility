@@ -4,9 +4,12 @@
  * Handles complex JSON Schema forms including discriminated unions (oneOf + discriminator).
  * Supports: strings, numbers, booleans, arrays, const fields, optional (anyOf with null),
  *           nested $ref, and platform→operation discriminated unions.
+ * metatype values: textarea, file, datetime, date, color, email, url, password, html
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Registry of Quill instances keyed by field id, for flush-before-submit
+    const quillInstances = {};
     const schema = window.TOOL_SCHEMA || {};
     const root = document.getElementById('schema-form-root');
     const modal = document.getElementById('result-modal');
@@ -196,6 +199,62 @@ document.addEventListener('DOMContentLoaded', () => {
             addHelp(group, desc);
             return group;
         }
+        if (metaType === 'html') {
+            const group = makeGroup(fullId, label, required, true);
+
+            // Wrapper that Quill will attach to
+            const editorWrapper = document.createElement('div');
+            editorWrapper.className = 'quill-editor-wrapper';
+
+            // The actual editable surface Quill mounts inside
+            const editorDiv = document.createElement('div');
+            editorDiv.className = 'quill-editor-surface';
+            if (defaultVal) editorDiv.innerHTML = defaultVal;
+            editorWrapper.appendChild(editorDiv);
+
+            // Hidden input that carries the HTML value through FormData
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.id = fullId;
+            hidden.name = fullId;
+            hidden.value = defaultVal || '';
+            editorWrapper.appendChild(hidden);
+
+            group.appendChild(editorWrapper);
+            addHelp(group, desc);
+
+            // Initialise Quill after the element is in the DOM
+            // (requestAnimationFrame ensures the element is painted first)
+            requestAnimationFrame(() => {
+                if (typeof Quill === 'undefined') return;
+                const quill = new Quill(editorDiv, {
+                    theme: 'snow',
+                    placeholder: desc || 'Enter rich text…',
+                    modules: {
+                        toolbar: [
+                            [{ header: [1, 2, 3, false] }],
+                            ['bold', 'italic', 'underline', 'strike'],
+                            [{ color: [] }, { background: [] }],
+                            [{ list: 'ordered' }, { list: 'bullet' }],
+                            [{ indent: '-1' }, { indent: '+1' }],
+                            ['blockquote', 'code-block'],
+                            ['link', 'image'],
+                            ['clean']
+                        ]
+                    }
+                });
+
+                // Sync HTML → hidden input on every change
+                quill.on('text-change', () => {
+                    hidden.value = quill.root.innerHTML;
+                });
+
+                // Register globally so submit handler can flush
+                quillInstances[fullId] = { quill, hidden };
+            });
+
+            return group;
+        }
 
         // const → read-only display badge
         if ('const' in fieldSchema || 'const' in effectiveSchema) {
@@ -348,9 +407,43 @@ document.addEventListener('DOMContentLoaded', () => {
             if (fieldSchema.$ref) {
                 resolved = resolveDef(fieldSchema.$ref, defs) || fieldSchema;
             }
+
+            // Handle nested discriminated unions
+            let nestedResolved = resolved;
+            if (nestedResolved.anyOf) {
+                const nonNullSchema = nestedResolved.anyOf.find(s => s.type !== 'null');
+                if (nonNullSchema) {
+                    nestedResolved = nonNullSchema;
+                    if (nestedResolved.$ref) {
+                        nestedResolved = resolveDef(nestedResolved.$ref, defs) || nestedResolved;
+                    }
+                }
+            }
+            if (nestedResolved.$ref) {
+                nestedResolved = resolveDef(nestedResolved.$ref, defs) || nestedResolved;
+            }
+
+            // Auto inject discriminator
+            if (!nestedResolved.discriminator && nestedResolved.oneOf) {
+                nestedResolved.discriminator = { propertyName: "type" };
+            }
+
+            if (nestedResolved.discriminator || nestedResolved.oneOf) {
+                const nestedSection = document.createElement('div');
+                nestedSection.className = 'nested-discriminator-section';
+                const nestedTitle = document.createElement('h3');
+                nestedTitle.className = 'section-title';
+                nestedTitle.textContent = nestedResolved.title || name;
+                nestedSection.appendChild(nestedTitle);
+                
+                buildDiscriminatedUnion(nestedResolved, defs, nestedSection, 1, skipKeys, []);
+                grid.appendChild(nestedSection);
+                return; // Skip normal field rendering
+            }
+
             // Pass per-field meta (e.g. { type: 'file', multiple: true })
             const fieldMeta = metaFields[name] || {};
-            const fieldEl = buildField(name, resolved, reqList, defs, namePrefix, fieldMeta);
+            const fieldEl = buildField(name, nestedResolved, reqList, defs, namePrefix, fieldMeta);
             if (fieldEl) grid.appendChild(fieldEl);
         });
 
@@ -380,7 +473,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!discriminator) return false;
 
         const propName = discriminator.propertyName; // e.g. "platform"
-        const mapping = discriminator.mapping || {};
+        let mapping = discriminator.mapping || {};
+
+        // Auto-build mapping from oneOf if missing (Pydantic often emits oneOf without mapping)
+        if ((!mapping || Object.keys(mapping).length === 0) && payloadSchema.oneOf) {
+            mapping = {};
+            payloadSchema.oneOf.forEach(schema => {
+                let resolvedSchema = schema;
+                if (schema.$ref) {
+                    resolvedSchema = resolveDef(schema.$ref, defs) || schema;
+                }
+                const discField = resolvedSchema.properties?.[propName];
+                if (!discField) return;
+
+                let discValue = null;
+                if (discField.const !== undefined) {
+                    discValue = discField.const;
+                } else if (discField.enum && discField.enum.length) {
+                    discValue = discField.enum[0];
+                }
+
+                if (discValue) {
+                    mapping[discValue] = schema;
+                }
+            });
+        }
+
         const options = Object.keys(mapping);
 
         // Step container
@@ -526,6 +644,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 resolved = resolveDef(propSchema.$ref, defs) || propSchema;
             }
 
+            // Handle Optional[Union[...]] (Pydantic wraps unions inside anyOf)
+            if (resolved.anyOf) {
+                const nonNullSchema = resolved.anyOf.find(s => s.type !== 'null');
+                if (nonNullSchema) {
+                    resolved = nonNullSchema;
+                    if (resolved.$ref) {
+                        resolved = resolveDef(resolved.$ref, defs) || resolved;
+                    }
+                }
+            }
+
+            // Auto inject discriminator if missing
+            if (!resolved.discriminator && resolved.oneOf) {
+                resolved.discriminator = { propertyName: "type" };
+            }
+
             // Check if this property is itself a discriminated union (oneOf + discriminator)
             if (resolved.discriminator || (resolved.oneOf && resolved.discriminator)) {
                 const section = document.createElement('div');
@@ -565,6 +699,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // ─── Collect nested form values ─────────────────────────────────────────────
     // Builds a nested JSON object from flat `name__subname` field convention
     function collectFormData() {
+        // Flush all Quill editors to their hidden inputs before reading FormData
+        Object.values(quillInstances).forEach(({ quill, hidden }) => {
+            hidden.value = quill.root.innerHTML;
+        });
+
         const formData = new FormData(toolForm);
         const flat = {};
         formData.forEach((value, key) => {
@@ -633,7 +772,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     "required": true,
                     "description": `Choose a ${displayConnType} connection...`,
                     "propertyName": propName,
-                    "connection_value": connType,
+                    "value": connType,
                     "used_in_operations": new Set()
                 });
             }
@@ -791,14 +930,15 @@ document.addEventListener('DOMContentLoaded', () => {
             "type": "tool",
             "title": meta.display_name || window.TOOL_NAME,
             "description": window.TOOL_DESCRIPTION || "",
-            "tool_description": window.TOOL_DESCRIPTION || "",
             "properties": schema,
             "display_description": window.TOOL_DESCRIPTION || "",
             "display_properties": displayProps,
-            "connection_string": meta.connection_name 
-                ? { "type": "connection", "value": Array.isArray(meta.connection_name) 
-                    ? meta.connection_name.map(c => c.type).join(', ') 
-                    : (meta.connection_name.type || meta.category || "Service") } 
+            "connection_string": meta.connection_name
+                ? {
+                    "type": "connection", "value": Array.isArray(meta.connection_name)
+                        ? meta.connection_name.map(c => c.type).join(', ')
+                        : (meta.connection_name.type || meta.category || "Service")
+                }
                 : null,
             "category_name": meta.category || "Uncategorized",
             "server": "Caregence-MCP-Server",
