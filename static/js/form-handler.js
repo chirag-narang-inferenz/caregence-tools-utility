@@ -1,12 +1,3 @@
-
-/**
- * MCP Tool Form Handler
- * Handles complex JSON Schema forms including discriminated unions (oneOf + discriminator).
- * Supports: strings, numbers, booleans, arrays, const fields, optional (anyOf with null),
- *           nested $ref, and platform→operation discriminated unions.
- * metatype values: textarea, file, datetime, date, color, email, url, password, html
- */
-
 document.addEventListener('DOMContentLoaded', () => {
     // Registry of Quill instances keyed by field id, for flush-before-submit
     const quillInstances = {};
@@ -772,7 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     "required": true,
                     "description": `Choose a ${displayConnType} connection...`,
                     "propertyName": propName,
-                    "value": connType,
+                    "connection_value": connType,
                     "used_in_operations": new Set()
                 });
             }
