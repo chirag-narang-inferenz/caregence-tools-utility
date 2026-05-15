@@ -72,6 +72,8 @@
     window.TOOL_SCHEMA = {{ raw_schema_json | safe }};
     window.TOOL_NAME = {{ tool.name | tojson }};
     window.TOOL_META = {{ tool.meta | tojson | safe if tool.meta else '{}' }};
+    window.TOOL_DESCRIPTION = {{ tool.description | tojson | safe if tool.description else '""' }};
+
 </script>
 <script src="{{ url_for('static', filename='js/form-handler.js') }}"></script>
 {% endblock %}
