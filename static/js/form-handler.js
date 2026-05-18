@@ -8,6 +8,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultPayload = document.getElementById('result-payload');
     const toolForm = document.getElementById('tool-form');
 
+    function slugify(s) {
+        return String(s || '').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    }
+
     // ─── Resolve $ref ──────────────────────────────────────────────────────────
     function resolveDef(ref, defs) {
         if (!ref) return null;
@@ -392,7 +396,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const metaFields = (window.TOOL_META && window.TOOL_META.fields) || {};
 
         Object.entries(props).forEach(([name, fieldSchema]) => {
-            if (skipKeys.includes(name)) return;
+            const fullId = namePrefix ? `${namePrefix}${name}` : name;
+            const dotId = namePrefix ? `${namePrefix.replace(/__/g, '.')}${name}` : name;
+            
+            const shouldSkip = skipKeys.some(sk => {
+                const sSlug = slugify(sk);
+                const nSlug = slugify(name);
+                const fSlug = slugify(fullId);
+                const dSlug = slugify(dotId);
+                return sSlug === nSlug || 
+                       sSlug === fSlug || 
+                       sSlug === dSlug || 
+                       sSlug.endsWith('__' + nSlug) || 
+                       sSlug.endsWith('.' + nSlug) ||
+                       nSlug.endsWith('__' + sSlug) ||
+                       nSlug.endsWith('.' + sSlug);
+            });
+            if (shouldSkip) return;
             // Resolve $ref
             let resolved = fieldSchema;
             if (fieldSchema.$ref) {
@@ -447,7 +467,27 @@ document.addEventListener('DOMContentLoaded', () => {
     function sweepSkipFields(container, skipFields) {
         if (!skipFields || skipFields.length === 0) return;
         skipFields.forEach(fieldName => {
-            container.querySelectorAll(`[data-field-name="${fieldName}"]`).forEach(el => el.remove());
+            const fSlug = slugify(fieldName);
+            container.querySelectorAll(`[data-field-name]`).forEach(el => {
+                const nameAttr = el.dataset.fieldName;
+                if (!nameAttr) return;
+                const dotNameAttr = nameAttr.replace(/__/g, '.');
+                const rawName = nameAttr.split('__').pop();
+                
+                const nSlug = slugify(nameAttr);
+                const dnSlug = slugify(dotNameAttr);
+                const rSlug = slugify(rawName);
+                
+                if (nSlug === fSlug || 
+                    dnSlug === fSlug || 
+                    rSlug === fSlug || 
+                    fSlug.endsWith('__' + nSlug) || 
+                    fSlug.endsWith('.' + nSlug) ||
+                    nSlug.endsWith('__' + fSlug) ||
+                    nSlug.endsWith('.' + fSlug)) {
+                    el.remove();
+                }
+            });
         });
         // Remove any sections / op-fields-sections left empty after the sweep
         container.querySelectorAll('.schema-section, .op-fields-section').forEach(section => {
@@ -611,13 +651,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Also handle direct hidden_property on the meta (e.g. "twilio_account_sid,twilio_auth_token,...")
-        if (meta.hidden_properties) {
-            const hiddenList = Array.isArray(meta.hidden_properties)
-                ? meta.hidden_properties
-                : String(meta.hidden_properties).split(',').map(s => s.trim()).filter(Boolean);
+        // Also handle direct hidden_properties/hidden_property on the meta (e.g. "twilio_account_sid,twilio_auth_token,..." or ["twilio_account_sid", "twilio_auth_token"])
+        const rawHidden = meta.hidden_properties || meta.hidden_property;
+        if (rawHidden) {
+            let hiddenList = [];
+            if (Array.isArray(rawHidden)) {
+                hiddenList = rawHidden.map(s => String(s).trim()).filter(Boolean);
+            } else if (typeof rawHidden === 'string') {
+                hiddenList = rawHidden.split(',').map(s => s.trim()).filter(Boolean);
+            } else if (typeof rawHidden === 'object' && rawHidden !== null) {
+                hiddenList = Object.keys(rawHidden).map(s => String(s).trim()).filter(Boolean);
+            }
             hiddenList.forEach(f => { if (!skipFields.includes(f)) skipFields.push(f); });
-
         }
 
         updateMetadataDisplay(skipFields);
@@ -746,10 +791,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const allFoundOps = new Set();
         let discriminatorPropertyName = null;
 
-        function slugify(s) {
-            return String(s || '').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-        }
-
         // Helper to add connection property to propMap at the right time (for ordering)
         function addConnectionProp(c, idx, opValue = null) {
             const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
@@ -783,7 +824,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function addOrUpdateProp(name, resolved, required, prefix, opValue = null) {
             const propName = prefix + name;
-            if (skipFields.includes(name)) return;
+            const dotPropName = prefix ? `${prefix.replace(/__/g, '.')}${name}` : name;
+            const nSlug = slugify(name);
+            const pSlug = slugify(propName);
+            const dpSlug = slugify(dotPropName);
+            
+            const shouldSkip = skipFields.some(sf => {
+                const sfSlug = slugify(sf);
+                return sfSlug === nSlug || 
+                       sfSlug === pSlug || 
+                       sfSlug === dpSlug || 
+                       sfSlug.endsWith('__' + nSlug) || 
+                       sfSlug.endsWith('.' + nSlug) ||
+                       nSlug.endsWith('__' + sfSlug) ||
+                       nSlug.endsWith('.' + sfSlug);
+            });
+            if (shouldSkip) return;
 
             if (!propMap.has(propName)) {
                 // Base type from schema
@@ -957,6 +1013,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (window.lucide) lucide.createIcons();
                 setTimeout(() => {
                     copyBtn.innerHTML = orig;
+                    if (window.lucide) lucide.createIcons();
+                }, 20000);
+            });
+        });
+    }
+
+    const rawMetaPre = document.getElementById('raw-meta-json');
+    if (rawMetaPre) {
+        rawMetaPre.textContent = JSON.stringify(window.TOOL_META || {}, null, 2);
+    }
+
+    const copyRawMetaBtn = document.getElementById('copy-raw-meta-btn');
+    if (copyRawMetaBtn) {
+        copyRawMetaBtn.addEventListener('click', () => {
+            const json = document.getElementById('raw-meta-json').textContent;
+            navigator.clipboard.writeText(json).then(() => {
+                const orig = copyRawMetaBtn.innerHTML;
+                copyRawMetaBtn.innerHTML = '<i data-lucide="check" style="width:16px; height:16px;"></i> <span>Copied!</span>';
+                if (window.lucide) lucide.createIcons();
+                setTimeout(() => {
+                    copyRawMetaBtn.innerHTML = orig;
                     if (window.lucide) lucide.createIcons();
                 }, 20000);
             });
