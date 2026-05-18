@@ -1,0 +1,90 @@
+# Python cache and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+../pyc/
+../__pycache__/
+venv/
+env/
+.venv/
+*/venv/
+*/env/
+*/.venv/
+**/venv/
+**/env/
+**/.venv/
+caregence_env/
+Files/
+Swanson-dev-env/
+
+# Node modules
+node_modules/
+
+# Environment variable files
+.env
+.venv
+
+# Build and dependency files
+dist/
+build/
+*.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+.cache
+
+# Temporary and custom files
+temp_semantic_threading_processing.py
+temp_data_snow_multi.py
+quicksand_testing.py
+.sonar
+bandit_files_list.txt
+transcription_cache.json
+
+# Pytest cache and reports
+.pytest_cache/
+*.pytest_cache/
+*.pytest_results/
+*.pytest_report.*
+tmp_test_workflows/
+test/
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+
+.idea/
+uploaded_files/
+
+server.py
+logs
+workflows
+patients.db
+# test*.py
+captcha.png
+test.py
+test2.py
+.testenv/
+requirements1.txt
+clam_test.py
+s3_storage.py
+s3_storage_repository.py
+s3_storage_service.py
+s3_bucket_tools_new.py
+test1.py
+test3.py
+images
+test1.py
+test2.py
+test3.py
+captcha.png
+preauth_images
+test4.py
+static/token/
+athena_token_cache.json
+workflow.json
+.vscode/
+caregence_mcp/interfaces/mcp/schemas/teams_pydantic copy.py
+response.json

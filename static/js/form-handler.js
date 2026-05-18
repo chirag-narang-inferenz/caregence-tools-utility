@@ -612,11 +612,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Also handle direct hidden_property on the meta (e.g. "twilio_account_sid,twilio_auth_token,...")
-        if (meta.hidden_property) {
-            const hiddenList = Array.isArray(meta.hidden_property)
-                ? meta.hidden_property
-                : String(meta.hidden_property).split(',').map(s => s.trim()).filter(Boolean);
+        if (meta.hidden_properties) {
+            const hiddenList = Array.isArray(meta.hidden_properties)
+                ? meta.hidden_properties
+                : String(meta.hidden_properties).split(',').map(s => s.trim()).filter(Boolean);
             hiddenList.forEach(f => { if (!skipFields.includes(f)) skipFields.push(f); });
+
         }
 
         updateMetadataDisplay(skipFields);
@@ -957,7 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => {
                     copyBtn.innerHTML = orig;
                     if (window.lucide) lucide.createIcons();
-                }, 2000);
+                }, 20000);
             });
         });
     }

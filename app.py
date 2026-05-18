@@ -1,7 +1,8 @@
 
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
-
+from mcp.client.sse import sse_client
+from mcp import ClientSession
 import json
 import asyncio
 
@@ -10,13 +11,12 @@ CORS(app)
 
 # Global tools list that can be updated dynamically from the MCP server
 DYNAMIC_TOOLS = []
-CURRENT_SSE_URL = "http://192.168.8.149:9090/sse"
+CURRENT_SSE_URL = "http://192.168.8.191:9090/sse"
 
 
 async def fetch_tools_via_mcp(sse_url: str):
     """Use the official MCP Python client to connect and list tools."""
-    from mcp.client.sse import sse_client
-    from mcp import ClientSession
+
 
     print(f"[MCP] Connecting to: {sse_url}")
     async with sse_client(sse_url) as (read, write):
