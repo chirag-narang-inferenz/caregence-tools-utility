@@ -72,7 +72,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ─── Build field for a single property ─────────────────────────────────────
     function buildField(name, fieldSchema, requiredList, defs, namePrefix = '', fieldMeta = {}) {
         const required = requiredList && requiredList.includes(name);
-        const fullId = namePrefix ? `${namePrefix}__${name}` : name;
+        // const fullId = namePrefix ? `${namePrefix}__${name}` : name;
+        const fullId = namePrefix ? `${namePrefix}_${name}` : name;
 
         // Resolve anyOf with null → optional field
         let effectiveSchema = fieldSchema;
@@ -396,8 +397,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const metaFields = (window.TOOL_META && window.TOOL_META.fields) || {};
 
         Object.entries(props).forEach(([name, fieldSchema]) => {
-            const fullId = namePrefix ? `${namePrefix}${name}` : name;
-            const dotId = namePrefix ? `${namePrefix.replace(/__/g, '.')}${name}` : name;
+            // const fullId = namePrefix ? `${namePrefix}${name}` : name;
+            const fullId = namePrefix ? `${namePrefix}_${name}` : name;
+            const dotId = namePrefix ? `${namePrefix.replace(/_/g, '.')}.${name}` : name;
+            // const dotId = namePrefix ? `${namePrefix.replace(/__/g, '.')}${name}` : name;
             
             const shouldSkip = skipKeys.some(sk => {
                 const sSlug = slugify(sk);
@@ -483,9 +486,11 @@ document.addEventListener('DOMContentLoaded', () => {
             container.querySelectorAll(`[data-field-name]`).forEach(el => {
                 const nameAttr = el.dataset.fieldName;
                 if (!nameAttr) return;
-                const dotNameAttr = nameAttr.replace(/__/g, '.');
-                const rawName = nameAttr.split('__').pop();
-                
+                // const dotNameAttr = nameAttr.replace(/__/g, '.');
+                const dotNameAttr = nameAttr.replace(/_/g, '.')
+
+                // const rawName = nameAttr.split('__').pop();
+                const rawName = nameAttr.split('_').pop();
                 const nSlug = slugify(nameAttr);
                 const dnSlug = slugify(dotNameAttr);
                 const rSlug = slugify(rawName);
@@ -493,9 +498,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (nSlug === fSlug || 
                     dnSlug === fSlug || 
                     rSlug === fSlug || 
-                    fSlug.endsWith('__' + nSlug) || 
+                    fSlug.endsWith('_' + nSlug) || 
                     fSlug.endsWith('.' + nSlug) ||
-                    nSlug.endsWith('__' + fSlug) ||
+                    nSlug.endsWith('_' + fSlug) ||
                     nSlug.endsWith('.' + fSlug)) {
                     el.remove();
                 }
@@ -809,7 +814,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const connType = c.type || meta.category || 'Service';
             const displayConnType = Array.isArray(connType) ? connType.join(', ') : connType;
             const propName = conns.length > 1 ? `Credential_${(c.type || idx).toString().replace(/\s+/g, '_')}` : "Credential";
-
+            console.log("Adding connection prop:", propName);
             if (!propMap.has(propName)) {
                 propMap.set(propName, {
                     "type": ["connection"],
@@ -835,8 +840,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function addOrUpdateProp(name, resolved, required, prefix, opValue = null) {
-            const propName = prefix + name;
-            const dotPropName = prefix ? `${prefix.replace(/__/g, '.')}${name}` : name;
+            console.log(`Processing property "${prefix}  hii  ${name}":`, resolved);
+            // const propName = prefix + name;
+            const propName = prefix ? `${prefix}_${name}` : name;
+
+            // const dotPropName = prefix ? `${prefix.replace(/__/g, '.')}${name}` : name;
+            const dotPropName = prefix ? `${prefix.replace(/_/g, '.')}.${name}` : name;
             const nSlug = slugify(name);
             const pSlug = slugify(propName);
             const dpSlug = slugify(dotPropName);
@@ -846,9 +855,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return sfSlug === nSlug || 
                        sfSlug === pSlug || 
                        sfSlug === dpSlug || 
-                       sfSlug.endsWith('__' + nSlug) || 
+                       sfSlug.endsWith('_' + nSlug) || 
                        sfSlug.endsWith('.' + nSlug) ||
-                       nSlug.endsWith('__' + sfSlug) ||
+                       nSlug.endsWith('_' + sfSlug) ||
                        nSlug.endsWith('.' + sfSlug);
             });
             if (shouldSkip) return;
@@ -858,7 +867,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 let type = Array.isArray(resolved.type) ? resolved.type : (resolved.type ? [resolved.type] : ['string']);
                 // Override type from meta.fields if defined (e.g. 'file', 'textarea', 'datetime')
                 const fieldMetaType = meta && meta.fields && meta.fields[name] && meta.fields[name].type;
+                console.log(`Processing property "${propName}":`, resolved);
                 if (fieldMetaType) type = [fieldMetaType];
+
                 propMap.set(propName, {
                     type: type,
                     title: resolved.title || name,
@@ -893,7 +904,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Detect discriminator property name
             if (resolved.discriminator && resolved.discriminator.propertyName) {
-                discriminatorPropertyName = prefix + resolved.discriminator.propertyName;
+                // discriminatorPropertyName = prefix + resolved.discriminator.propertyName;
+                discriminatorPropertyName = prefix
+                ? `${prefix}_${resolved.discriminator.propertyName}`
+                : resolved.discriminator.propertyName;
             }
 
             // Handle properties in current level
@@ -913,9 +927,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (propSchema.$ref) pResolved = resolveDef(propSchema.$ref, defs) || propSchema;
 
                     if (pResolved.type === 'object' && pResolved.properties) {
-                        walk(pResolved, prefix + name + '__', opValue);
+                        // walk(pResolved, prefix + name + '__', opValue);
+                        const nextPrefix = name === 'payload' ? '' : (prefix ? `${prefix}_${name}` : name);
+                        walk(pResolved, nextPrefix, opValue);
                     } else if (pResolved.discriminator) {
-                        walk(pResolved, prefix + name + '__', opValue);
+                        const nextPrefix = name === 'payload' ? '' : (prefix ? `${prefix}_${name}` : name);
+                        walk(pResolved, nextPrefix, opValue);
+                        // walk(pResolved, prefix + name + '__', opValue);
                     } else {
                         addOrUpdateProp(name, pResolved, requiredList.includes(name), prefix, opValue);
                     }
