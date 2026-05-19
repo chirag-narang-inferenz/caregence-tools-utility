@@ -422,14 +422,26 @@ document.addEventListener('DOMContentLoaded', () => {
             // Handle nested discriminated unions
             let nestedResolved = resolved;
             if (nestedResolved.anyOf) {
-                const nonNullSchema = nestedResolved.anyOf.find(s => s.type !== 'null');
-                if (nonNullSchema) {
-                    nestedResolved = nonNullSchema;
-                    if (nestedResolved.$ref) {
-                        nestedResolved = resolveDef(nestedResolved.$ref, defs) || nestedResolved;
-                    }
+            const nonNullSchema = nestedResolved.anyOf.find(s => s.type !== 'null');
+
+            if (nonNullSchema) {
+                nestedResolved = {
+                    ...nonNullSchema,
+                    title: nestedResolved.title,
+                    description: nestedResolved.description,
+                    default: nestedResolved.default
+                };
+
+                if (nestedResolved.$ref) {
+                    nestedResolved = {
+                        ...(resolveDef(nestedResolved.$ref, defs) || nestedResolved),
+                        title: nestedResolved.title,
+                        description: nestedResolved.description,
+                        default: nestedResolved.default
+                    };
                 }
             }
+        }
             if (nestedResolved.$ref) {
                 nestedResolved = resolveDef(nestedResolved.$ref, defs) || nestedResolved;
             }
