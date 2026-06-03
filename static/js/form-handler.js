@@ -804,138 +804,51 @@ document.addEventListener('DOMContentLoaded', () => {
     function generateDisplayProperties(schema, skipFields, meta) {
         const defs = schema.$defs || schema.definitions || {};
 
-        // Helper to add connection property to propMap at the right time (for ordering)
-        function addConnectionProp(c, idx, opValue = null) {
-            const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
-            const connType = c.type || meta.category || 'Service';
-            const displayConnType = Array.isArray(connType) ? connType.join(', ') : connType;
-            const propName = conns.length > 1 ? `Credential_${(c.type || idx).toString().replace(/\s+/g, '_')}` : "Credential";
-            console.log("Adding connection prop:", propName);
-            if (!propMap.has(propName)) {
-                propMap.set(propName, {
-                    "type": ["connection"],
-                    "title": `Select ${displayConnType} Connection`,
-                    "required": true,
-                    "description": `Choose a ${displayConnType} connection...`,
-                    "propertyName": propName,
-                    "connection_value": connType,
-                    "used_in_operations": new Set()
-                });
-            }
-            if (opValue) {
-                propMap.get(propName).used_in_operations.add(opValue);
-            }
+        function resolve(s) {
+            return s.$ref ? (resolveDef(s.$ref, defs) || s) : s;
         }
 
-        // 1. Connection properties (Top-level/Global only - Added at start)
-        if (meta && meta.connection_name) {
-            const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
-            conns.forEach((c, idx) => {
-                if (!c.dependency) addConnectionProp(c, idx);
-            });
-        }
-
-        function addOrUpdateProp(name, resolved, required, prefix, opValue = null) {
-            console.log(`Processing property "${prefix}  hii  ${name}":`, resolved);
-            // const propName = prefix + name;
-            const propName = prefix ? `${prefix}_${name}` : name;
-
-            // const dotPropName = prefix ? `${prefix.replace(/__/g, '.')}${name}` : name;
-            const dotPropName = prefix ? `${prefix.replace(/_/g, '.')}.${name}` : name;
+        function shouldSkip(name, fullName) {
             const nSlug = slugify(name);
             const fSlug = slugify(fullName);
             const dotSlug = slugify(fullName.replace(/__/g, '.'));
             return skipFields.some(sf => {
                 const sfSlug = slugify(sf);
                 return sfSlug === nSlug || 
-                       sfSlug === pSlug || 
-                       sfSlug === dpSlug || 
+                       sfSlug === fSlug || 
+                       sfSlug === dotSlug || 
                        sfSlug.endsWith('_' + nSlug) || 
                        sfSlug.endsWith('.' + nSlug) ||
                        nSlug.endsWith('_' + sfSlug) ||
                        nSlug.endsWith('.' + sfSlug);
             });
-            if (shouldSkip) return;
-
-            if (!propMap.has(propName)) {
-                // Base type from schema
-                let type = Array.isArray(resolved.type) ? resolved.type : (resolved.type ? [resolved.type] : ['string']);
-                // Override type from meta.fields if defined (e.g. 'file', 'textarea', 'datetime')
-                const fieldMetaType = meta && meta.fields && meta.fields[name] && meta.fields[name].type;
-                console.log(`Processing property "${propName}":`, resolved);
-                if (fieldMetaType) type = [fieldMetaType];
-
-                propMap.set(propName, {
-                    type: type,
-                    title: resolved.title || name,
-                    required: required,
-                    description: resolved.description || '',
-                    propertyName: propName,
-                    used_in_operations: new Set()
-                });
-                if (resolved.enum) propMap.get(propName).enum = resolved.enum;
-                if (resolved.default !== undefined) propMap.get(propName).default = resolved.default;
-                if (resolved.const !== undefined) {
-                    // If it's a const and matches an operation value, it's likely the discriminator
-                    // We'll handle this in the final pass if we found the discriminator path
-                }
-            } else if (required) {
-                propMap.get(propName).required = true;
-            }
-
-            if (opValue) {
-                propMap.get(propName).used_in_operations.add(opValue);
-                allFoundOps.add(opValue);
-            }
         }
 
-        function walk(currentSchema, prefix = '', opValue = null) {
-            if (!currentSchema) return;
-
-            let resolved = currentSchema;
-            if (currentSchema.$ref) {
-                resolved = resolveDef(currentSchema.$ref, defs) || currentSchema;
-            }
-
-            // Detect discriminator property name
-            if (resolved.discriminator && resolved.discriminator.propertyName) {
-                // discriminatorPropertyName = prefix + resolved.discriminator.propertyName;
-                discriminatorPropertyName = prefix
-                ? `${prefix}_${resolved.discriminator.propertyName}`
-                : resolved.discriminator.propertyName;
-            }
-
-            // Handle properties in current level
-            if (resolved.properties) {
-                // Add connections that depend on the current opValue (Selection contextual) - At the start of the module
-                if (meta && meta.connection_name && opValue) {
-                    const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
-                    const opSlug = slugify(opValue);
-                    conns.forEach((c, idx) => {
-                        if (c.dependency && slugify(c.dependency) === opSlug) addConnectionProp(c, idx, opValue);
+        function getConnectionsFor(opValue = null) {
+            if (!meta || !meta.connection_name) return [];
+            const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
+            let nodes = [];
+            
+            conns.forEach((c, idx) => {
+                const shouldInclude = opValue === null ? !c.dependency : (slugify(c.dependency) === slugify(opValue));
+                if (shouldInclude) {
+                    const connType = c.type || meta.category || 'Service';
+                    const displayConnType = Array.isArray(connType) ? connType.join(', ') : connType;
+                    const propName = conns.length > 1 ? `Credential_${(c.type || idx).toString().replace(/\s+/g, '_')}` : "Credential";
+                    
+                    nodes.push({
+                        "type": ["connection"],
+                        "title": `Select ${displayConnType} Connection`,
+                        "required": true,
+                        "description": `Choose a ${displayConnType} connection...`,
+                        "propertyName": propName,
+                        "connection_value": connType
                     });
                 }
-
-                const requiredList = resolved.required || [];
-                Object.entries(resolved.properties).forEach(([name, propSchema]) => {
-                    let pResolved = propSchema;
-                    if (propSchema.$ref) pResolved = resolveDef(propSchema.$ref, defs) || propSchema;
-
-                    if (pResolved.type === 'object' && pResolved.properties) {
-                        // walk(pResolved, prefix + name + '__', opValue);
-                        const nextPrefix = name === 'payload' ? '' : (prefix ? `${prefix}_${name}` : name);
-                        walk(pResolved, nextPrefix, opValue);
-                    } else if (pResolved.discriminator) {
-                        const nextPrefix = name === 'payload' ? '' : (prefix ? `${prefix}_${name}` : name);
-                        walk(pResolved, nextPrefix, opValue);
-                        // walk(pResolved, prefix + name + '__', opValue);
-                    } else {
-                        addOrUpdateProp(name, pResolved, requiredList.includes(name), prefix, opValue);
-                    }
-                });
-            }
-            return matches;
+            });
+            return nodes;
         }
+
 
         function parseSchema(currentSchema, prefix = '', skipProp = null) {
             if (!currentSchema) return [];
