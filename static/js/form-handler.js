@@ -55,14 +55,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const availableConns = window.CAREGENCE_CONNECTIONS || [];
         
         availableConns.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.id;
-            // Highlight the type in the dropdown text
-            opt.textContent = `${c.connection_name} [${c.connection_type}]`;
+            const cType = (c.connection_type || '').toLowerCase();
+            const allowedTypes = connTypes.map(t => (t || '').toLowerCase());
             
-            // Optional: If you want to auto-select or highlight exact matches, you can do it here.
-            // For now, we list all available connections because the types might differ slightly.
-            sel.appendChild(opt);
+            // If the metadata asks for a specific type (e.g., 'twilio'), only show matches.
+            // If it just says 'service' (the generic default), show all connections to be safe.
+            const isMatch = allowedTypes.includes(cType) || allowedTypes.includes('service');
+            
+            if (isMatch) {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = `${c.connection_name} [${c.connection_type}]`;
+                sel.appendChild(opt);
+            }
         });
 
         group.appendChild(sel);
@@ -498,8 +503,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (nSlug === fSlug || 
                     dnSlug === fSlug || 
                     rSlug === fSlug || 
-                    fSlug.endsWith('_' + nSlug) || 
-                    fSlug.endsWith('.' + nSlug) ||
                     nSlug.endsWith('_' + fSlug) ||
                     nSlug.endsWith('.' + fSlug)) {
                     el.remove();
@@ -817,8 +820,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return sfSlug === nSlug || 
                        sfSlug === fSlug || 
                        sfSlug === dotSlug || 
-                       sfSlug.endsWith('_' + nSlug) || 
-                       sfSlug.endsWith('.' + nSlug) ||
                        nSlug.endsWith('_' + sfSlug) ||
                        nSlug.endsWith('.' + sfSlug);
             });
@@ -906,6 +907,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (shouldSkip(name, fullName)) return;
 
                     let pResolved = resolve(propSchema);
+                    const origTitle = pResolved.title;
+                    const origDesc = pResolved.description;
+                    const origDefault = pResolved.default;
                     
                     if (pResolved.anyOf) {
                         const nonNull = pResolved.anyOf.find(s => s.type !== 'null');
@@ -927,12 +931,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         name: name,
                         propertyName: fullName,
                         type: type,
-                        title: pResolved.title || name,
+                        title: origTitle || pResolved.title || name,
                         required: reqList.includes(name),
-                        description: pResolved.description || '',
+                        description: origDesc || pResolved.description || '',
                     };
                     if (pResolved.enum) node.enum = pResolved.enum;
-                    if (pResolved.default !== undefined) node.default = pResolved.default;
+                    if (origDefault !== undefined) node.default = origDefault;
+                    else if (pResolved.default !== undefined) node.default = pResolved.default;
                     if (pResolved.const !== undefined) node.const = pResolved.const;
                     
                     if (pResolved.discriminator || pResolved.oneOf || (pResolved.type === 'object' && pResolved.properties)) {
