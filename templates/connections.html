@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="breadcrumb">
+    <i data-lucide="link" style="width:14px;height:14px;"></i>
+    <span>Connections</span>
+</div>
+
+<div class="form-container">
+    <div class="form-header">
+        <div class="tool-badge">
+            <i data-lucide="link"></i>
+        </div>
+        <div>
+            <h1>Caregence Connections</h1>
+            <p>View all available connections fetched from the Caregence API.</p>
+        </div>
+    </div>
+
+    {% if connections %}
+    <div style="overflow-x: auto; margin-top: 1.5rem;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+            <thead>
+                <tr style="border-bottom: 2px solid var(--border); color: var(--text-muted); font-size: 0.875rem;">
+                    <th style="padding: 1rem 0.5rem; font-weight: 600;">Connection Name</th>
+                    <th style="padding: 1rem 0.5rem; font-weight: 600;">Type</th>
+                    <th style="padding: 1rem 0.5rem; font-weight: 600;">Created By</th>
+                    <th style="padding: 1rem 0.5rem; font-weight: 600;">Created At</th>
+                    <th style="padding: 1rem 0.5rem; font-weight: 600;">ID</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for conn in connections %}
+                <tr style="border-bottom: 1px solid var(--border); font-size: 0.875rem; color: var(--text);">
+                    <td style="padding: 1rem 0.5rem; font-weight: 500;">{{ conn.connection_name }}</td>
+                    <td style="padding: 1rem 0.5rem;">
+                        <span style="display: inline-block; padding: 0.25rem 0.5rem; border-radius: 4px; background: var(--bg-hover); color: var(--accent); font-weight: 600; font-size: 0.75rem;">
+                            {{ conn.connection_type }}
+                        </span>
+                    </td>
+                    <td style="padding: 1rem 0.5rem; color: var(--text-muted);">{{ conn.created_by_name }}</td>
+                    <td style="padding: 1rem 0.5rem; color: var(--text-muted);">{{ conn.created_at[:10] if conn.created_at else '' }}</td>
+                    <td style="padding: 1rem 0.5rem; font-family: monospace; font-size: 0.75rem; color: var(--text-muted);">{{ conn.id[:8] }}...</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align:center; padding: 3rem; color:var(--text-muted); border: 1px dashed var(--border); border-radius: 8px; margin-top: 2rem;">
+        <i data-lucide="alert-circle" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.5;"></i>
+        <p>No connections found. Ensure your credentials are valid or connections exist in the Caregence API.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

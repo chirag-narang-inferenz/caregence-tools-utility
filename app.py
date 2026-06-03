@@ -5,6 +5,7 @@ from mcp.client.sse import sse_client
 from mcp import ClientSession
 import json
 import asyncio
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -12,6 +13,84 @@ CORS(app)
 # Global tools list that can be updated dynamically from the MCP server
 DYNAMIC_TOOLS = []
 CURRENT_SSE_URL = "http://192.168.8.191:9090/sse"
+CAREGENCE_CONNECTIONS = []
+
+def get_caregence_token():
+    login_url = "https://uat-api.caregence.ai/users/login"
+    login_payload = {
+        "email": "administrator@caregence.ai",
+        "password": "c9*mrwC!78"
+    }
+    print(f"[Caregence] Logging in with email: {login_payload['email']} ...")
+    login_res = requests.post(login_url, json=login_payload)
+    login_res.raise_for_status()
+    
+    login_data = login_res.json()
+    access_token = login_data.get("access_token")
+    if not access_token:
+        if "data" in login_data and "access_token" in login_data["data"]:
+            access_token = login_data["data"]["access_token"]
+        
+    if not access_token:
+        raise Exception("No access token returned in login response.")
+    
+    return access_token
+
+def fetch_caregence_connections():
+    global CAREGENCE_CONNECTIONS
+    try:
+        access_token = get_caregence_token()
+
+        conns_url = "https://uat-api.caregence.ai/connections/"
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        print("[Caregence] Fetching connections...")
+        conns_res = requests.get(conns_url, headers=headers)
+        conns_res.raise_for_status()
+        
+        conns_data = conns_res.json()
+        if conns_data.get("success"):
+            CAREGENCE_CONNECTIONS = conns_data.get("data", [])
+            print(f"[Caregence] Successfully fetched {len(CAREGENCE_CONNECTIONS)} connections.")
+        else:
+            print(f"[Caregence Error] Failed to fetch connections: {conns_data}")
+            
+    except Exception as e:
+        print(f"[Caregence Error] Failed to fetch connections: {e}")
+
+
+@app.route('/api/connection-actions/execute', methods=['POST'])
+def proxy_connection_actions():
+    try:
+        print(f"[Caregence Action] Incoming request for action: {request.json.get('action')}")
+        print(f"[Caregence Action] Payload: {json.dumps(request.json, indent=2)}")
+        
+        access_token = get_caregence_token()
+        
+        url = "https://uat-api.caregence.ai/connection-actions/execute"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        
+        print(f"[Caregence Action] Sending POST to {url} ...")
+        res = requests.post(url, headers=headers, json=request.json)
+        
+        print(f"[Caregence Action] Response Status: {res.status_code}")
+        try:
+            res_json = res.json()
+            print(f"[Caregence Action] Response JSON: {json.dumps(res_json, indent=2)}")
+        except Exception:
+            res_json = None
+            print(f"[Caregence Action] Raw Response Text: {res.text}")
+            
+        res.raise_for_status()
+        return jsonify(res_json if res_json else res.text)
+    except Exception as e:
+        print(f"[Caregence Action Error] {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 
 async def fetch_tools_via_mcp(sse_url: str):
@@ -117,6 +196,12 @@ def tools_page():
     """A dedicated page to browse and inspect MCP tools."""
     return render_template('tools_page.html', tools=DYNAMIC_TOOLS, sse_url=CURRENT_SSE_URL)
 
+@app.route('/connections')
+def connections_page():
+    """A dedicated page to browse Caregence connections."""
+    fetch_caregence_connections()
+    return render_template('connections.html', connections=CAREGENCE_CONNECTIONS)
+
 
 @app.route('/tool/<tool_name>')
 def tool_form(tool_name):
@@ -125,7 +210,10 @@ def tool_form(tool_name):
         return "Tool not found", 404
     # Pass the raw input_schema as JSON string so JS can handle complex discriminated unions
     raw_schema_json = json.dumps(tool.get("input_schema", {}))
-    return render_template('form.html', tool=tool, raw_schema_json=raw_schema_json, sse_url=CURRENT_SSE_URL)
+    
+    fetch_caregence_connections()
+        
+    return render_template('form.html', tool=tool, raw_schema_json=raw_schema_json, sse_url=CURRENT_SSE_URL, connections=CAREGENCE_CONNECTIONS)
 
 
 @app.route('/execute/<tool_name>', methods=['POST'])

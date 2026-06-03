@@ -41,7 +41,6 @@ document.addEventListener('DOMContentLoaded', () => {
         group.appendChild(span);
     }
 
-    // ─── Create a connection dropdown ──────────────────────────────────────────
     function makeConnectionDropdown(connMeta, name = 'connection_id') {
         const connTypes = Array.isArray(connMeta.type) ? connMeta.type : [connMeta.type || 'Service'];
         const displayConnType = connTypes.join(' or ');
@@ -53,15 +52,16 @@ document.addEventListener('DOMContentLoaded', () => {
         sel.required = true;
         sel.innerHTML = `<option value="">Choose a ${displayConnType} connection...</option>`;
 
-        // Mock connections - In a real app, this might fetch from an API
-        const mockConns = connTypes.flatMap(t => [
-            { id: `conn_${t.toLowerCase().replace(/\s+/g, '_')}_1`, name: `${t} Connection 1` },
-            { id: `conn_${t.toLowerCase().replace(/\s+/g, '_')}_2`, name: `${t} Connection 2` }
-        ]);
-        mockConns.forEach(c => {
+        const availableConns = window.CAREGENCE_CONNECTIONS || [];
+        
+        availableConns.forEach(c => {
             const opt = document.createElement('option');
             opt.value = c.id;
-            opt.textContent = c.name;
+            // Highlight the type in the dropdown text
+            opt.textContent = `${c.connection_name} [${c.connection_type}]`;
+            
+            // Optional: If you want to auto-select or highlight exact matches, you can do it here.
+            // For now, we list all available connections because the types might differ slightly.
             sel.appendChild(opt);
         });
 
@@ -797,179 +797,159 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ─── Metadata Export Logic ──────────────────────────────────────────────────
     function generateDisplayProperties(schema, skipFields, meta) {
-        const displayProps = [];
         const defs = schema.$defs || schema.definitions || {};
-        const propMap = new Map();
-        const allFoundOps = new Set();
-        let discriminatorPropertyName = null;
 
-        // Helper to add connection property to propMap at the right time (for ordering)
-        function addConnectionProp(c, idx, opValue = null) {
-            const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
-            const connType = c.type || meta.category || 'Service';
-            const displayConnType = Array.isArray(connType) ? connType.join(', ') : connType;
-            const propName = conns.length > 1 ? `Credential_${(c.type || idx).toString().replace(/\s+/g, '_')}` : "Credential";
-
-            if (!propMap.has(propName)) {
-                propMap.set(propName, {
-                    "type": ["connection"],
-                    "title": `Select ${displayConnType} Connection`,
-                    "required": true,
-                    "description": `Choose a ${displayConnType} connection...`,
-                    "propertyName": propName,
-                    "connection_value": connType,
-                    "used_in_operations": new Set()
-                });
-            }
-            if (opValue) {
-                propMap.get(propName).used_in_operations.add(opValue);
-            }
+        function resolve(s) {
+            if (s && s.$ref) return resolveDef(s.$ref, defs) || s;
+            return s;
         }
-
-        // 1. Connection properties (Top-level/Global only - Added at start)
-        if (meta && meta.connection_name) {
-            const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
-            conns.forEach((c, idx) => {
-                if (!c.dependency) addConnectionProp(c, idx);
-            });
-        }
-
-        function addOrUpdateProp(name, resolved, required, prefix, opValue = null) {
-            const propName = prefix + name;
-            const dotPropName = prefix ? `${prefix.replace(/__/g, '.')}${name}` : name;
+        
+        function shouldSkip(name, fullName) {
             const nSlug = slugify(name);
-            const pSlug = slugify(propName);
-            const dpSlug = slugify(dotPropName);
-            
-            const shouldSkip = skipFields.some(sf => {
+            const fSlug = slugify(fullName);
+            const dotSlug = slugify(fullName.replace(/__/g, '.'));
+            return skipFields.some(sf => {
                 const sfSlug = slugify(sf);
-                return sfSlug === nSlug || 
-                       sfSlug === pSlug || 
-                       sfSlug === dpSlug || 
-                       sfSlug.endsWith('__' + nSlug) || 
-                       sfSlug.endsWith('.' + nSlug) ||
-                       nSlug.endsWith('__' + sfSlug) ||
-                       nSlug.endsWith('.' + sfSlug);
+                return sfSlug === nSlug || sfSlug === fSlug || sfSlug === dotSlug ||
+                       sfSlug.endsWith('__' + nSlug) || sfSlug.endsWith('.' + nSlug) ||
+                       nSlug.endsWith('__' + sfSlug) || nSlug.endsWith('.' + sfSlug);
             });
-            if (shouldSkip) return;
-
-            if (!propMap.has(propName)) {
-                // Base type from schema
-                let type = Array.isArray(resolved.type) ? resolved.type : (resolved.type ? [resolved.type] : ['string']);
-                // Override type from meta.fields if defined (e.g. 'file', 'textarea', 'datetime')
-                const fieldMetaType = meta && meta.fields && meta.fields[name] && meta.fields[name].type;
-                if (fieldMetaType) type = [fieldMetaType];
-                propMap.set(propName, {
-                    type: type,
-                    title: resolved.title || name,
-                    required: required,
-                    description: resolved.description || '',
-                    propertyName: propName,
-                    used_in_operations: new Set()
-                });
-                if (resolved.enum) propMap.get(propName).enum = resolved.enum;
-                if (resolved.default !== undefined) propMap.get(propName).default = resolved.default;
-                if (resolved.const !== undefined) {
-                    // If it's a const and matches an operation value, it's likely the discriminator
-                    // We'll handle this in the final pass if we found the discriminator path
-                }
-            } else if (required) {
-                propMap.get(propName).required = true;
-            }
-
-            if (opValue) {
-                propMap.get(propName).used_in_operations.add(opValue);
-                allFoundOps.add(opValue);
-            }
         }
 
-        function walk(currentSchema, prefix = '', opValue = null) {
-            if (!currentSchema) return;
-
-            let resolved = currentSchema;
-            if (currentSchema.$ref) {
-                resolved = resolveDef(currentSchema.$ref, defs) || currentSchema;
-            }
-
-            // Detect discriminator property name
-            if (resolved.discriminator && resolved.discriminator.propertyName) {
-                discriminatorPropertyName = prefix + resolved.discriminator.propertyName;
-            }
-
-            // Handle properties in current level
-            if (resolved.properties) {
-                // Add connections that depend on the current opValue (Selection contextual) - At the start of the module
-                if (meta && meta.connection_name && opValue) {
-                    const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
-                    const opSlug = slugify(opValue);
-                    conns.forEach((c, idx) => {
-                        if (c.dependency && slugify(c.dependency) === opSlug) addConnectionProp(c, idx, opValue);
-                    });
-                }
-
-                const requiredList = resolved.required || [];
-                Object.entries(resolved.properties).forEach(([name, propSchema]) => {
-                    let pResolved = propSchema;
-                    if (propSchema.$ref) pResolved = resolveDef(propSchema.$ref, defs) || propSchema;
-
-                    if (pResolved.type === 'object' && pResolved.properties) {
-                        walk(pResolved, prefix + name + '__', opValue);
-                    } else if (pResolved.discriminator) {
-                        walk(pResolved, prefix + name + '__', opValue);
-                    } else {
-                        addOrUpdateProp(name, pResolved, requiredList.includes(name), prefix, opValue);
+        function getConnectionsFor(dependencyValue) {
+            let matches = [];
+            if (meta && meta.connection_name) {
+                const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
+                conns.forEach((c, idx) => {
+                    const isGlobal = !c.dependency;
+                    const matchesDependency = c.dependency && slugify(c.dependency) === slugify(dependencyValue);
+                    
+                    if ((dependencyValue === null && isGlobal) || (dependencyValue !== null && matchesDependency)) {
+                        const connType = c.type || meta.category || 'Service';
+                        const displayConnType = Array.isArray(connType) ? connType.join(', ') : connType;
+                        const propName = conns.length > 1 ? `Credential_${(c.type || idx).toString().replace(/\s+/g, '_')}` : "Credential";
+                        
+                        matches.push({
+                            name: propName,
+                            propertyName: propName,
+                            type: ["connection"],
+                            title: `Select ${displayConnType} Connection`,
+                            required: true,
+                            description: `Choose a ${displayConnType} connection...`,
+                            connection_value: connType,
+                            dependency: c.dependency || null
+                        });
                     }
                 });
             }
-
-            // Handle Discriminated Union
-            if (resolved.discriminator && resolved.discriminator.mapping) {
-                const mapping = resolved.discriminator.mapping;
-                Object.entries(mapping).forEach(([val, ref]) => {
-                    walk({ $ref: ref }, prefix, val);
-                });
-            } else if (resolved.oneOf || resolved.anyOf) {
-                const variants = resolved.oneOf || resolved.anyOf;
-                variants.forEach(v => walk(v, prefix, opValue));
-            }
+            return matches;
         }
 
-        walk(schema);
+        function parseSchema(currentSchema, prefix = '', skipProp = null) {
+            if (!currentSchema) return [];
+            let resolved = resolve(currentSchema);
+            let nodes = [];
 
-        // Final pass: Convert Set to Array and handle common fields
-        const allOpsArray = Array.from(allFoundOps);
-        propMap.forEach((prop, name) => {
-            if (name.startsWith("Credential")) {
-                if (prop.used_in_operations && prop.used_in_operations.size > 0) {
-                    prop.used_in_operations = Array.from(prop.used_in_operations);
-                } else {
-                    delete prop.used_in_operations;
+            // Discriminator
+            if (resolved.discriminator) {
+                const propName = resolved.discriminator.propertyName;
+                let mapping = resolved.discriminator.mapping || {};
+                
+                // Auto-build mapping if missing
+                if (Object.keys(mapping).length === 0 && resolved.oneOf) {
+                    resolved.oneOf.forEach(sub => {
+                        let subRes = resolve(sub);
+                        const discField = subRes.properties?.[propName];
+                        if (discField) {
+                            let discValue = discField.const || (discField.enum && discField.enum[0]);
+                            if (discValue) {
+                                mapping[discValue] = sub;
+                            }
+                        }
+                    });
                 }
-                displayProps.push(prop);
-                return;
+
+                let discNode = {
+                    name: propName,
+                    propertyName: prefix + propName,
+                    type: ['string'],
+                    title: propName,
+                    required: true,
+                    enum: Object.keys(mapping),
+                    isDiscriminator: true,
+                    mapping: {}
+                };
+
+                Object.entries(mapping).forEach(([val, refSchema]) => {
+                    const schemaToParse = typeof refSchema === 'string' ? { $ref: refSchema } : refSchema;
+                    let childNodes = parseSchema(schemaToParse, prefix, propName);
+                    let contextualConns = getConnectionsFor(val);
+                    discNode.mapping[val] = [...contextualConns, ...childNodes];
+                });
+                
+                nodes.push(discNode);
+                return nodes;
             }
 
-            // If this is the discriminator field, set its enum to all supported operations
-            if (name === discriminatorPropertyName || (prop.enum && prop.enum.some(v => allFoundOps.has(v))) || (prop.const && allFoundOps.has(prop.const))) {
-                prop.enum = allOpsArray;
-                prop.propertyName = "operations"; // Force fixed property name for discriminator
-                if (prop.const) delete prop.const;
-                delete prop.used_in_operations;
-            } else {
-                // If the property was found in the root (opValue was null) AND we have operations,
-                // it's likely used in all operations.
-                if (prop.used_in_operations.size === 0 && allOpsArray.length > 0) {
-                    prop.used_in_operations = allOpsArray;
-                } else if (prop.used_in_operations.size > 0) {
-                    prop.used_in_operations = Array.from(prop.used_in_operations);
-                } else {
-                    delete prop.used_in_operations;
-                }
-            }
-            displayProps.push(prop);
-        });
+            // Normal properties
+            if (resolved.properties) {
+                const reqList = resolved.required || [];
+                Object.entries(resolved.properties).forEach(([name, propSchema]) => {
+                    if (name === skipProp) return; // Skip discriminator field in child
 
-        return displayProps;
+                    const fullName = prefix ? `${prefix}${name}` : name;
+                    if (shouldSkip(name, fullName)) return;
+
+                    let pResolved = resolve(propSchema);
+                    
+                    if (pResolved.anyOf) {
+                        const nonNull = pResolved.anyOf.find(s => s.type !== 'null');
+                        if (nonNull) {
+                            pResolved = nonNull;
+                            pResolved = resolve(pResolved);
+                        }
+                    }
+
+                    if (!pResolved.discriminator && pResolved.oneOf) {
+                        pResolved.discriminator = { propertyName: "type" };
+                    }
+
+                    let type = Array.isArray(pResolved.type) ? pResolved.type : (pResolved.type ? [pResolved.type] : ['string']);
+                    const fieldMetaType = meta && meta.fields && meta.fields[name] && meta.fields[name].type;
+                    if (fieldMetaType) type = [fieldMetaType];
+
+                    let node = {
+                        name: name,
+                        propertyName: fullName,
+                        type: type,
+                        title: pResolved.title || name,
+                        required: reqList.includes(name),
+                        description: pResolved.description || '',
+                    };
+                    if (pResolved.enum) node.enum = pResolved.enum;
+                    if (pResolved.default !== undefined) node.default = pResolved.default;
+                    if (pResolved.const !== undefined) node.const = pResolved.const;
+                    
+                    if (pResolved.discriminator || pResolved.oneOf || (pResolved.type === 'object' && pResolved.properties)) {
+                        node.properties = parseSchema(pResolved, fullName + '__');
+                    } else if (pResolved.type === 'array' && pResolved.items) {
+                        let itemsRes = resolve(pResolved.items);
+                        if (itemsRes.properties || itemsRes.discriminator || itemsRes.oneOf) {
+                            node.items = parseSchema(itemsRes, fullName + '_items__');
+                        }
+                    }
+
+                    nodes.push(node);
+                });
+            }
+
+            return nodes;
+        }
+
+        let rootFields = parseSchema(schema);
+        let globalConnections = getConnectionsFor(null);
+
+        return [...globalConnections, ...rootFields];
     }
 
     function updateMetadataDisplay(skipFields) {
@@ -1052,6 +1032,156 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ─── Dynamic Dependencies ───────────────────────────────────────────────────
+    function setupDependencies() {
+        const meta = window.TOOL_META || {};
+        if (!meta.dependencies || !Array.isArray(meta.dependencies)) {
+            console.log("[Dependencies] No meta.dependencies found for this tool.");
+            return;
+        }
+
+        console.log("[Dependencies] Setting up dependencies:", meta.dependencies);
+
+        // Use event delegation to handle dynamically rendered fields
+        root.addEventListener('change', async (e) => {
+            if (!e.target || !e.target.name) return;
+            const targetName = e.target.name;
+
+            // Helper to check if a field name matches the desired target
+            const isMatch = (name, target) => {
+                return name === target || name.endsWith('__' + target) || name.endsWith('.' + target);
+            };
+
+            for (const dep of meta.dependencies) {
+                const on_change = dep.on_change || [];
+                const on_value = dep.on_value;
+                const action = dep.action;
+                const dependent_value = dep.dependent_value;
+
+                if (!on_value || !action) continue;
+
+                const triggered = on_change.some(triggerName => isMatch(targetName, triggerName));
+                if (triggered) {
+                    console.log(`[Dependencies] Triggered by field '${targetName}' matching '${dep.on_change}'`);
+                    
+                    // Find active connection ID
+                    const connSelects = Array.from(document.querySelectorAll('select[name^="Credential"], select[name="connection_id"]'));
+                    const activeConnSelect = connSelects.find(s => s.offsetParent !== null && s.value);
+                    const connection_id = activeConnSelect ? activeConnSelect.value : null;
+
+                    if (!connection_id) {
+                        console.warn("[Dependencies] No active connection_id found for action:", action);
+                    } else {
+                        console.log(`[Dependencies] Found connection_id: ${connection_id}`);
+                    }
+
+                    // If dependent_value specified, clear it
+                    if (dependent_value) {
+                        const allInputs = Array.from(root.querySelectorAll('input, select, textarea'));
+                        const depElements = allInputs.filter(el => isMatch(el.name, dependent_value));
+                        depElements.forEach(el => {
+                            if (el.tagName === 'SELECT') {
+                                el.innerHTML = `<option value="">Select ${dependent_value}...</option>`;
+                            } else {
+                                el.value = '';
+                            }
+                        });
+                    }
+
+                    // Prepare target elements
+                    const allInputs = Array.from(root.querySelectorAll('input, select, textarea'));
+                    const targetElements = allInputs.filter(el => isMatch(el.name, on_value));
+                    
+                    targetElements.forEach(el => {
+                        if (el.tagName === 'SELECT') {
+                            el.innerHTML = `<option value="">Loading options...</option>`;
+                        } else {
+                            // Replace input with select
+                            const sel = document.createElement('select');
+                            sel.id = el.id;
+                            sel.name = el.name;
+                            sel.className = el.className;
+                            sel.required = el.required;
+                            sel.innerHTML = `<option value="">Loading options...</option>`;
+                            el.parentNode.replaceChild(sel, el);
+                        }
+                    });
+
+                    const triggerKey = targetName.split('__').pop();
+                    const payload = {
+                        connection_id: connection_id,
+                        action: action,
+                        params: {
+                            [triggerKey]: e.target.value
+                        }
+                    };
+                    
+                    console.log("[Dependencies] Sending action payload:", payload);
+
+                    try {
+                        const response = await fetch('/api/connection-actions/execute', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        
+                        if (!response.ok) throw new Error(`HTTP ${response.status} - Failed to execute connection action`);
+                        
+                        const resData = await response.json();
+                        console.log("[Dependencies] Received proxy response:", resData);
+                        let optionsList = [];
+                        if (resData.data && resData.data.result) {
+                            // Find the first array in the result object (e.g. 'teams' or 'channels')
+                            for (const key in resData.data.result) {
+                                if (Array.isArray(resData.data.result[key])) {
+                                    optionsList = resData.data.result[key];
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (optionsList.length === 0) {
+                            if (resData.data && Array.isArray(resData.data)) {
+                                optionsList = resData.data;
+                            } else if (Array.isArray(resData)) {
+                                optionsList = resData;
+                            }
+                        }
+
+                        // Re-fetch target elements in case they were replaced
+                        const latestInputs = Array.from(root.querySelectorAll('input, select, textarea'));
+                        const updatedTargetElements = latestInputs.filter(el => isMatch(el.name, on_value));
+                        
+                        updatedTargetElements.forEach(el => {
+                            el.innerHTML = `<option value="">Select ${on_value}...</option>`;
+                            optionsList.forEach(opt => {
+                                const optionEl = document.createElement('option');
+                                if (typeof opt === 'object' && opt !== null) {
+                                    optionEl.value = opt.id || opt.value || opt.name;
+                                    optionEl.textContent = opt.displayName || opt.name || opt.label || opt.value || opt.id;
+                                } else {
+                                    optionEl.value = opt;
+                                    optionEl.textContent = opt;
+                                }
+                                el.appendChild(optionEl);
+                            });
+                        });
+                        
+                        console.log(`[Dependencies] Successfully updated field '${on_value}' with ${optionsList.length} options.`);
+                    } catch (err) {
+                        console.error("[Dependencies] Action Execution Error:", err);
+                        const latestInputs = Array.from(root.querySelectorAll('input, select, textarea'));
+                        const updatedTargetElements = latestInputs.filter(el => isMatch(el.name, on_value));
+                        updatedTargetElements.forEach(el => {
+                            el.innerHTML = `<option value="">Error loading options</option>`;
+                        });
+                    }
+                }
+            }
+        });
+    }
+
     // ─── Boot ───────────────────────────────────────────────────────────────────
     renderForm(schema);
+    setupDependencies();
 });
