@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeBtn = document.querySelector('.close-modal');
     const resultPayload = document.getElementById('result-payload');
     const toolForm = document.getElementById('tool-form');
-    
+
     initializeConnectionsMeta(schema);
 
     // ─── Create a labelled form-group ──────────────────────────────────────────
@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const badge = document.createElement('span');
             badge.className = 'const-field';
             badge.innerHTML = `<i data-lucide="lock" style="width:13px;height:13px;"></i> ${constVal}`;
-            
+
             const hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.name = fullId;
@@ -288,7 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const inputType = standardInputTypes[metaType] || standardInputTypes[effectiveSchema.type] || 'text';
-        
+
         const group = makeGroup(fullId, label, required);
         const inp = document.createElement('input');
         inp.type = inputType;
@@ -327,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Nest connection check: We no longer do this by matching schema here.
             // Connections are handled globally and inside discriminators via c.dependency.
 
-            const shouldSkip = !isAlwaysShow(name, fullId, dotId) && skipKeys.some(sk => 
+            const shouldSkip = !isAlwaysShow(name, fullId, dotId) && skipKeys.some(sk =>
                 fieldsMatch(name, sk) || fieldsMatch(fullId, sk) || fieldsMatch(dotId, sk)
             );
             if (shouldSkip) return;
@@ -384,7 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ─── Post-render sweep helper ───────────────────────────────────────────────
     function sweepSkipFields(container, skipFields) {
         if (!skipFields || skipFields.length === 0) return;
-        
+
         container.querySelectorAll(`[data-field-name]`).forEach(el => {
             const nameAttr = el.dataset.fieldName;
             if (!nameAttr || isAlwaysShow(nameAttr) || nameAttr.startsWith('connection_name')) return;
@@ -551,10 +551,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateMetadataDisplay(skipFields);
 
-        const defs = schema.$defs || 
-                     schema.definitions || 
-                     (schema.properties && (schema.properties.$defs || schema.properties.definitions)) || 
-                     {};
+        const defs = schema.$defs ||
+            schema.definitions ||
+            (schema.properties && (schema.properties.$defs || schema.properties.definitions)) ||
+            {};
         const required = schema.required || [];
 
         Object.entries(properties).forEach(([propName, propSchema]) => {
@@ -722,7 +722,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
 
                     try {
-                        const response = await fetch('/api/connection-actions/execute', {
+                        const response = await fetch('http://127.0.0.1:8001/api/connection-actions/execute', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)

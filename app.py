@@ -16,7 +16,7 @@ CURRENT_SSE_URL = "http://192.168.8.191:9090/sse"
 CAREGENCE_CONNECTIONS = []
 
 def get_caregence_token():
-    login_url = "https://uat-api.caregence.ai/users/login"
+    login_url = "http://127.0.0.1:8001/users/login"
     login_payload = {
         "email": "administrator@caregence.ai",
         "password": "c9*mrwC!78"
@@ -41,7 +41,7 @@ def fetch_caregence_connections():
     try:
         access_token = get_caregence_token()
 
-        conns_url = "https://uat-api.caregence.ai/connections/"
+        conns_url = "http://127.0.0.1:8001/connections/"
         headers = {
             "Authorization": f"Bearer {access_token}"
         }
@@ -68,7 +68,7 @@ def proxy_connection_actions():
         
         access_token = get_caregence_token()
         
-        url = "https://uat-api.caregence.ai/connection-actions/execute"
+        url = "http://127.0.0.1:8001/connection-actions/execute"
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
