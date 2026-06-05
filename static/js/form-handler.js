@@ -2,14 +2,161 @@ document.addEventListener('DOMContentLoaded', () => {
     // Registry of Quill instances keyed by field id, for flush-before-submit
     const quillInstances = {};
     const schema = window.TOOL_SCHEMA || {};
+    let activeConnections = [];
     const root = document.getElementById('schema-form-root');
     const modal = document.getElementById('result-modal');
     const closeBtn = document.querySelector('.close-modal');
     const resultPayload = document.getElementById('result-payload');
     const toolForm = document.getElementById('tool-form');
-
     function slugify(s) {
         return String(s || '').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    }
+
+    // ─── Resolve $ref ──────────────────────────────────────────────────────────
+    function resolveDef(ref, defs) {
+        if (!ref) return null;
+        const key = ref.split('/').pop();
+        return defs[key] || null;
+    }
+
+    // Dynamic Connections and Credentials Auto-Discovery
+    const ALWAYS_SHOW_FIELDS = new Set([
+        'access_key',
+        'secret_key',
+        'region',
+        'region_name',
+        'aws_sender'
+    ]);
+
+    function autoDiscoverConnections(schemaObj) {
+        const defs = schemaObj.$defs || schemaObj.definitions || {};
+        const connections = [];
+
+        function scanSchema(s) {
+            if (!s) return;
+            
+            let resolved = s;
+            if (s.$ref) {
+                resolved = resolveDef(s.$ref, defs) || s;
+            }
+
+            if (resolved.anyOf) {
+                resolved.anyOf.forEach(sub => scanSchema(sub));
+            }
+
+            if (resolved.properties) {
+                Object.values(resolved.properties).forEach(prop => scanSchema(prop));
+            }
+
+            if (resolved.discriminator || resolved.oneOf) {
+                const discriminator = resolved.discriminator || { propertyName: "type" };
+                const propName = discriminator.propertyName;
+                let mapping = discriminator.mapping || {};
+
+                if (Object.keys(mapping).length === 0 && resolved.oneOf) {
+                    resolved.oneOf.forEach(sub => {
+                        let subRes = sub;
+                        if (sub.$ref) {
+                            subRes = resolveDef(sub.$ref, defs) || sub;
+                        }
+                        const discField = subRes.properties?.[propName];
+                        if (discField) {
+                            let discValue = discField.const || (discField.enum && discField.enum[0]);
+                            if (discValue) {
+                                mapping[discValue] = sub;
+                            }
+                        }
+                    });
+                }
+
+                Object.entries(mapping).forEach(([dependencyVal, mappingVal]) => {
+                    let subSchema = typeof mappingVal === 'string' ? resolveDef(mappingVal, defs) : mappingVal;
+                    if (subSchema && subSchema.$ref) {
+                        subSchema = resolveDef(subSchema.$ref, defs);
+                    }
+                    if (subSchema && subSchema.properties) {
+                        const fields = Object.keys(subSchema.properties).filter(f => f !== propName);
+                        
+                        let connType = 'Service';
+                        const depLower = dependencyVal.toLowerCase();
+                        if (depLower.includes('azure')) {
+                            connType = 'Azure_OpenAI';
+                        } else if (depLower.includes('aws') || depLower.includes('bedrock')) {
+                            connType = 'AWS_Bedrock';
+                        } else if (depLower.includes('twilio')) {
+                            connType = 'Twilio';
+                        } else if (depLower.includes('slack')) {
+                            connType = 'Slack';
+                        } else {
+                            connType = dependencyVal.charAt(0).toUpperCase() + dependencyVal.slice(1);
+                        }
+
+                        const exists = connections.some(c => c.dependency === dependencyVal && c.type === connType);
+                        if (!exists && fields.length > 0) {
+                            connections.push({
+                                dependency: dependencyVal,
+                                fields: fields,
+                                type: connType
+                            });
+                        }
+                    }
+                });
+            }
+        }
+
+        scanSchema(schemaObj);
+        return connections;
+    }
+
+    // Initialize/Inject Tool Metadata dynamically
+    if (!window.TOOL_META) window.TOOL_META = {};
+    if (!window.TOOL_META.connection_name) {
+        window.TOOL_META.connection_name = [];
+    }
+    if (!Array.isArray(window.TOOL_META.connection_name)) {
+        window.TOOL_META.connection_name = [window.TOOL_META.connection_name];
+    }
+
+    const discoveredConnections = autoDiscoverConnections(schema);
+    discoveredConnections.forEach(d => {
+        const exists = window.TOOL_META.connection_name.some(c => 
+            c.dependency === d.dependency || 
+            (c.type && c.type.toLowerCase() === d.type.toLowerCase())
+        );
+        if (!exists) {
+            window.TOOL_META.connection_name.push(d);
+        }
+    });
+
+    function isAlwaysShow(name, fullId = '', dotId = '') {
+        const meta = window.TOOL_META || {};
+        if (meta.connection_name) {
+            const rawConns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
+            const connectionFields = [];
+            rawConns.forEach(c => {
+                const rawFields = c.fields || Object.keys(c).filter(k => k !== 'type' && k !== 'fields' && k !== 'dependency');
+                const fields = Array.isArray(rawFields) ? rawFields : String(rawFields).split(',').map(s => s.trim()).filter(Boolean);
+                fields.forEach(f => connectionFields.push(slugify(f)));
+            });
+            
+            const fieldNames = [name, fullId, dotId].filter(Boolean).map(f => slugify(f));
+            const isMappedToConnection = fieldNames.some(fn => 
+                connectionFields.some(cf => fn === cf || fn.endsWith('_' + cf) || fn.endsWith('.' + cf))
+            );
+            if (isMappedToConnection) {
+                return false;
+            }
+        }
+
+        const fields = [name, fullId, dotId].filter(Boolean);
+        return fields.some(f => {
+            const slug = slugify(f);
+            return Array.from(ALWAYS_SHOW_FIELDS).some(always => 
+                slug === always || 
+                slug.endsWith('_' + always) || 
+                slug.endsWith('.' + always)
+            );
+        });
     }
 
     // ─── Resolve $ref ──────────────────────────────────────────────────────────
@@ -41,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         group.appendChild(span);
     }
 
-    function makeConnectionDropdown(connMeta, name = 'connection_id') {
+    function makeConnectionDropdown(connMeta, name = 'connection_name') {
         const connTypes = Array.isArray(connMeta.type) ? connMeta.type : [connMeta.type || 'Service'];
         const displayConnType = connTypes.join(' or ');
 
@@ -53,18 +200,18 @@ document.addEventListener('DOMContentLoaded', () => {
         sel.innerHTML = `<option value="">Choose a ${displayConnType} connection...</option>`;
 
         const availableConns = window.CAREGENCE_CONNECTIONS || [];
-        
+
         availableConns.forEach(c => {
             const cType = (c.connection_type || '').toLowerCase();
             const allowedTypes = connTypes.map(t => (t || '').toLowerCase());
-            
+
             // If the metadata asks for a specific type (e.g., 'twilio'), only show matches.
             // If it just says 'service' (the generic default), show all connections to be safe.
             const isMatch = allowedTypes.includes(cType) || allowedTypes.includes('service');
-            
+
             if (isMatch) {
                 const opt = document.createElement('option');
-                opt.value = c.id;
+                opt.value = c.connection_name;
                 opt.textContent = `${c.connection_name} [${c.connection_type}]`;
                 sel.appendChild(opt);
             }
@@ -406,19 +553,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const fullId = namePrefix ? `${namePrefix}_${name}` : name;
             const dotId = namePrefix ? `${namePrefix.replace(/_/g, '.')}.${name}` : name;
             // const dotId = namePrefix ? `${namePrefix.replace(/__/g, '.')}${name}` : name;
-            
-            const shouldSkip = skipKeys.some(sk => {
+
+            const shouldSkip = !isAlwaysShow(name, fullId, dotId) && skipKeys.some(sk => {
                 const sSlug = slugify(sk);
                 const nSlug = slugify(name);
                 const fSlug = slugify(fullId);
                 const dSlug = slugify(dotId);
-                return sSlug === nSlug || 
-                       sSlug === fSlug || 
-                       sSlug === dSlug || 
-                       sSlug.endsWith('__' + nSlug) || 
-                       sSlug.endsWith('.' + nSlug) ||
-                       nSlug.endsWith('__' + sSlug) ||
-                       nSlug.endsWith('.' + sSlug);
+                return sSlug === nSlug ||
+                    sSlug === fSlug ||
+                    sSlug === dSlug ||
+                    sSlug.endsWith('__' + nSlug) ||
+                    sSlug.endsWith('.' + nSlug) ||
+                    nSlug.endsWith('__' + sSlug) ||
+                    nSlug.endsWith('.' + sSlug);
             });
             if (shouldSkip) return;
             // Resolve $ref
@@ -430,26 +577,26 @@ document.addEventListener('DOMContentLoaded', () => {
             // Handle nested discriminated unions
             let nestedResolved = resolved;
             if (nestedResolved.anyOf) {
-            const nonNullSchema = nestedResolved.anyOf.find(s => s.type !== 'null');
+                const nonNullSchema = nestedResolved.anyOf.find(s => s.type !== 'null');
 
-            if (nonNullSchema) {
-                nestedResolved = {
-                    ...nonNullSchema,
-                    title: nestedResolved.title,
-                    description: nestedResolved.description,
-                    default: nestedResolved.default
-                };
-
-                if (nestedResolved.$ref) {
+                if (nonNullSchema) {
                     nestedResolved = {
-                        ...(resolveDef(nestedResolved.$ref, defs) || nestedResolved),
+                        ...nonNullSchema,
                         title: nestedResolved.title,
                         description: nestedResolved.description,
                         default: nestedResolved.default
                     };
+
+                    if (nestedResolved.$ref) {
+                        nestedResolved = {
+                            ...(resolveDef(nestedResolved.$ref, defs) || nestedResolved),
+                            title: nestedResolved.title,
+                            description: nestedResolved.description,
+                            default: nestedResolved.default
+                        };
+                    }
                 }
             }
-        }
             if (nestedResolved.$ref) {
                 nestedResolved = resolveDef(nestedResolved.$ref, defs) || nestedResolved;
             }
@@ -466,8 +613,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 nestedTitle.className = 'section-title';
                 nestedTitle.textContent = nestedResolved.title || name;
                 nestedSection.appendChild(nestedTitle);
-                
-                buildDiscriminatedUnion(nestedResolved, defs, nestedSection, 1, skipKeys, []);
+
+                buildDiscriminatedUnion(nestedResolved, defs, nestedSection, 1, skipKeys, activeConnections);
                 grid.appendChild(nestedSection);
                 return; // Skip normal field rendering
             }
@@ -487,10 +634,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function sweepSkipFields(container, skipFields) {
         if (!skipFields || skipFields.length === 0) return;
         skipFields.forEach(fieldName => {
+            if (isAlwaysShow(fieldName)) return;
             const fSlug = slugify(fieldName);
             container.querySelectorAll(`[data-field-name]`).forEach(el => {
                 const nameAttr = el.dataset.fieldName;
                 if (!nameAttr) return;
+                if (isAlwaysShow(nameAttr)) return;
                 // const dotNameAttr = nameAttr.replace(/__/g, '.');
                 const dotNameAttr = nameAttr.replace(/_/g, '.')
 
@@ -499,10 +648,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const nSlug = slugify(nameAttr);
                 const dnSlug = slugify(dotNameAttr);
                 const rSlug = slugify(rawName);
-                
-                if (nSlug === fSlug || 
-                    dnSlug === fSlug || 
-                    rSlug === fSlug || 
+
+                if (nSlug === fSlug ||
+                    dnSlug === fSlug ||
+                    rSlug === fSlug ||
                     nSlug.endsWith('_' + fSlug) ||
                     nSlug.endsWith('.' + fSlug)) {
                     el.remove();
@@ -511,8 +660,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         // Remove any sections / op-fields-sections left empty after the sweep
         container.querySelectorAll('.schema-section, .op-fields-section').forEach(section => {
-            const grid = section.querySelector('.fields-grid');
-            if (grid && grid.children.length === 0) section.remove();
+            const hasFormGroup = !!section.querySelector('.form-group');
+            const hasDiscriminator = !!section.querySelector('.discriminator-step');
+            if (!hasFormGroup && !hasDiscriminator) {
+                section.remove();
+            }
         });
     }
 
@@ -608,7 +760,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Contextual Connections based on dependency
                     connections.forEach(c => {
                         if (c.dependency === chosen) {
-                            const connName = connections.length > 1 ? `connection_id_${(c.type || 'service').toLowerCase()}` : 'connection_id';
+                            const connName = connections.length > 1 ? `connection_name_${(c.type || 'service').toLowerCase()}` : 'connection_name';
                             const connEl = makeConnectionDropdown(c, connName);
                             section.appendChild(connEl);
                         }
@@ -652,6 +804,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 fields.forEach(f => { if (!skipFields.includes(f)) skipFields.push(f); });
                 return { ...c, fields };
             });
+            activeConnections = connections;
 
             // Render top-level connections (no dependency)
             connections.forEach(c => {
@@ -663,7 +816,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     h3.innerHTML = `<i data-lucide="link" style="width:16px;height:16px;vertical-align:middle;margin-right:8px;"></i>${c.type || 'Service'} Connection`;
                     connSection.appendChild(h3);
 
-                    const connName = connections.length > 1 ? `connection_id_${(c.type || 'service').toLowerCase()}` : 'connection_id';
+                    const connName = connections.length > 1 ? `connection_name_${(c.type || 'service').toLowerCase()}` : 'connection_name';
                     const connEl = makeConnectionDropdown(c, connName);
                     connSection.appendChild(connEl);
                     root.appendChild(connSection);
@@ -693,7 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Iterate top-level properties
         Object.entries(properties).forEach(([propName, propSchema]) => {
-            if (skipFields.includes(propName)) return;
+            if (skipFields.includes(propName) && !isAlwaysShow(propName)) return;
 
             // Resolve $ref at top level
             let resolved = propSchema;
@@ -812,16 +965,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function shouldSkip(name, fullName) {
+            if (isAlwaysShow(name, fullName)) return false;
             const nSlug = slugify(name);
             const fSlug = slugify(fullName);
             const dotSlug = slugify(fullName.replace(/__/g, '.'));
             return skipFields.some(sf => {
                 const sfSlug = slugify(sf);
-                return sfSlug === nSlug || 
-                       sfSlug === fSlug || 
-                       sfSlug === dotSlug || 
-                       nSlug.endsWith('_' + sfSlug) ||
-                       nSlug.endsWith('.' + sfSlug);
+                return sfSlug === nSlug ||
+                    sfSlug === fSlug ||
+                    sfSlug === dotSlug ||
+                    nSlug.endsWith('_' + sfSlug) ||
+                    nSlug.endsWith('.' + sfSlug);
             });
         }
 
@@ -829,14 +983,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!meta || !meta.connection_name) return [];
             const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
             let nodes = [];
-            
+
             conns.forEach((c, idx) => {
                 const shouldInclude = opValue === null ? !c.dependency : (slugify(c.dependency) === slugify(opValue));
                 if (shouldInclude) {
                     const connType = c.type || meta.category || 'Service';
                     const displayConnType = Array.isArray(connType) ? connType.join(', ') : connType;
                     const propName = conns.length > 1 ? `Credential_${(c.type || idx).toString().replace(/\s+/g, '_')}` : "Credential";
-                    
+
                     nodes.push({
                         "type": ["connection"],
                         "title": `Select ${displayConnType} Connection`,
@@ -860,7 +1014,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (resolved.discriminator) {
                 const propName = resolved.discriminator.propertyName;
                 let mapping = resolved.discriminator.mapping || {};
-                
+
                 // Auto-build mapping if missing
                 if (Object.keys(mapping).length === 0 && resolved.oneOf) {
                     resolved.oneOf.forEach(sub => {
@@ -892,7 +1046,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     let contextualConns = getConnectionsFor(val);
                     discNode.mapping[val] = [...contextualConns, ...childNodes];
                 });
-                
+
                 nodes.push(discNode);
                 return nodes;
             }
@@ -910,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const origTitle = pResolved.title;
                     const origDesc = pResolved.description;
                     const origDefault = pResolved.default;
-                    
+
                     if (pResolved.anyOf) {
                         const nonNull = pResolved.anyOf.find(s => s.type !== 'null');
                         if (nonNull) {
@@ -935,17 +1089,27 @@ document.addEventListener('DOMContentLoaded', () => {
                         required: reqList.includes(name),
                         description: origDesc || pResolved.description || '',
                     };
+
+                    if (meta && meta.dependencies && meta.dependencies.length > 0) {
+                        const fieldDeps = meta.dependencies.filter(d =>
+                            d.on_value === name ||
+                            (d.on_change && d.on_change.includes(name))
+                        );
+                        if (fieldDeps.length > 0) {
+                            node.dependencies = fieldDeps;
+                        }
+                    }
                     if (pResolved.enum) node.enum = pResolved.enum;
                     if (origDefault !== undefined) node.default = origDefault;
                     else if (pResolved.default !== undefined) node.default = pResolved.default;
                     if (pResolved.const !== undefined) node.const = pResolved.const;
-                    
+
                     if (pResolved.discriminator || pResolved.oneOf || (pResolved.type === 'object' && pResolved.properties)) {
-                        node.properties = parseSchema(pResolved, fullName + '__');
+                        node.properties = parseSchema(pResolved, '');
                     } else if (pResolved.type === 'array' && pResolved.items) {
                         let itemsRes = resolve(pResolved.items);
                         if (itemsRes.properties || itemsRes.discriminator || itemsRes.oneOf) {
-                            node.items = parseSchema(itemsRes, fullName + '_items__');
+                            node.items = parseSchema(itemsRes, '');
                         }
                     }
 
@@ -998,6 +1162,10 @@ document.addEventListener('DOMContentLoaded', () => {
             "hidden_property": skipFields.join(','),
             "has_multi_operation": hasMultiOp
         };
+
+        if (meta.dependencies && meta.dependencies.length > 0) {
+            exportObj.dependencies = meta.dependencies;
+        }
 
         const pre = document.getElementById('metadata-json');
         if (pre) {
@@ -1073,7 +1241,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const triggered = on_change.some(triggerName => isMatch(targetName, triggerName));
                 if (triggered) {
                     console.log(`[Dependencies] Triggered by field '${targetName}' matching '${dep.on_change}'`);
-                    
+
                     // Find active connection ID
                     const connSelects = Array.from(document.querySelectorAll('select[name^="Credential"], select[name="connection_id"]'));
                     const activeConnSelect = connSelects.find(s => s.offsetParent !== null && s.value);
@@ -1101,7 +1269,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Prepare target elements
                     const allInputs = Array.from(root.querySelectorAll('input, select, textarea'));
                     const targetElements = allInputs.filter(el => isMatch(el.name, on_value));
-                    
+
                     targetElements.forEach(el => {
                         if (el.tagName === 'SELECT') {
                             el.innerHTML = `<option value="">Loading options...</option>`;
@@ -1125,7 +1293,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             [triggerKey]: e.target.value
                         }
                     };
-                    
+
                     console.log("[Dependencies] Sending action payload:", payload);
 
                     try {
@@ -1134,22 +1302,26 @@ document.addEventListener('DOMContentLoaded', () => {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
                         });
-                        
+
                         if (!response.ok) throw new Error(`HTTP ${response.status} - Failed to execute connection action`);
-                        
+
                         const resData = await response.json();
                         console.log("[Dependencies] Received proxy response:", resData);
                         let optionsList = [];
                         if (resData.data && resData.data.result) {
-                            // Find the first array in the result object (e.g. 'teams' or 'channels')
-                            for (const key in resData.data.result) {
-                                if (Array.isArray(resData.data.result[key])) {
-                                    optionsList = resData.data.result[key];
-                                    break;
+                            if (Array.isArray(resData.data.result)) {
+                                optionsList = resData.data.result;
+                            } else {
+                                // Find the first array in the result object (e.g. 'teams' or 'channels')
+                                for (const key in resData.data.result) {
+                                    if (Array.isArray(resData.data.result[key])) {
+                                        optionsList = resData.data.result[key];
+                                        break;
+                                    }
                                 }
                             }
                         }
-                        
+
                         if (optionsList.length === 0) {
                             if (resData.data && Array.isArray(resData.data)) {
                                 optionsList = resData.data;
@@ -1161,7 +1333,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Re-fetch target elements in case they were replaced
                         const latestInputs = Array.from(root.querySelectorAll('input, select, textarea'));
                         const updatedTargetElements = latestInputs.filter(el => isMatch(el.name, on_value));
-                        
+
                         updatedTargetElements.forEach(el => {
                             el.innerHTML = `<option value="">Select ${on_value}...</option>`;
                             optionsList.forEach(opt => {
@@ -1176,7 +1348,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 el.appendChild(optionEl);
                             });
                         });
-                        
+
                         console.log(`[Dependencies] Successfully updated field '${on_value}' with ${optionsList.length} options.`);
                     } catch (err) {
                         console.error("[Dependencies] Action Execution Error:", err);
