@@ -15,6 +15,23 @@ function resolveDef(ref, defs) {
     return null;
 }
 
+function normalizeFieldName(name) {
+    return slugify(name).replace(/[._]+/g, '_');
+}
+
+function fieldsMatch(name1, name2) {
+    const n1 = normalizeFieldName(name1);
+    const n2 = normalizeFieldName(name2);
+    return n1 === n2 || n1.endsWith('_' + n2);
+}
+
+function schemaMatchesConnection(resolvedSchema, connection) {
+    if (!resolvedSchema || !resolvedSchema.properties) return false;
+    const props = Object.keys(resolvedSchema.properties).map(p => slugify(p));
+    const connFields = connection.fields.map(f => slugify(f));
+    return connFields.every(cf => props.includes(cf));
+}
+
 const ALWAYS_SHOW_FIELDS = new Set([
     'access_key',
     'secret_key',
@@ -23,11 +40,57 @@ const ALWAYS_SHOW_FIELDS = new Set([
     'aws_sender'
 ]);
 
+function isCredentialField(fieldName) {
+    if (!fieldName) return false;
+    const slug = slugify(fieldName);
+    
+    // Explicitly ignore workflow tracking IDs
+    if (slug === 'workflow_id' || slug === 'execution_id') return false;
+
+    const CREDENTIAL_KEYWORDS = [
+        'key', 'secret', 'token', 'password', 'credential', 'auth',
+        'endpoint', 'deployment', 'api_version', 'region_name',
+        'client_id', 'tenant_id', 'account_sid', 'connection', 'string', 'version', 'region'
+    ];
+    return CREDENTIAL_KEYWORDS.some(kw => slug.includes(kw)) ||
+           slug.endsWith('_id') ||
+           slug.endsWith('_key') ||
+           slug.endsWith('_token') ||
+           slug.endsWith('_secret') ||
+           slug.endsWith('_password');
+}
+
+function inferConnectionType(fields, fallback) {
+    const availableConns = window.CAREGENCE_CONNECTIONS || [];
+    
+    for (const f of fields) {
+        const parts = f.split('_');
+        if (parts.length > 1) {
+            const prefix = parts[0].toLowerCase();
+            
+            // Check if prefix matches any connection type in CAREGENCE_CONNECTIONS
+            const match = availableConns.find(c => (c.connection_type || '').toLowerCase() === prefix);
+            if (match) return match.connection_type;
+            
+            // Special handling for compound names like azure_openai -> Azure_OpenAI or aws_bedrock -> AWS_Bedrock
+            const matchCompound = availableConns.find(c => {
+                const cTypeLower = (c.connection_type || '').toLowerCase();
+                return cTypeLower.startsWith(prefix) || prefix.startsWith(cTypeLower);
+            });
+            if (matchCompound) return matchCompound.connection_type;
+        }
+    }
+    return fallback;
+}
+
 function autoDiscoverConnections(schemaObj) {
-    const defs = schemaObj.$defs || schemaObj.definitions || {};
+    const defs = schemaObj.$defs || 
+                 schemaObj.definitions || 
+                 (schemaObj.properties && (schemaObj.properties.$defs || schemaObj.properties.definitions)) || 
+                 {};
     const connections = [];
 
-    function scanSchema(s) {
+    function scanSchema(s, opValue = null) {
         if (!s) return;
         
         let resolved = s;
@@ -36,11 +99,32 @@ function autoDiscoverConnections(schemaObj) {
         }
 
         if (resolved.anyOf) {
-            resolved.anyOf.forEach(sub => scanSchema(sub));
+            resolved.anyOf.forEach(sub => scanSchema(sub, opValue));
         }
 
         if (resolved.properties) {
-            Object.values(resolved.properties).forEach(prop => scanSchema(prop));
+            // Check if this object contains credential fields
+            const credentialFields = Object.keys(resolved.properties).filter(f => isCredentialField(f));
+            if (credentialFields.length >= 2) {
+                let connType = inferConnectionType(credentialFields, resolved.title || 'Service');
+                const connTypeLower = connType.toLowerCase();
+                if (connTypeLower.includes('azure')) {
+                    connType = 'Azure_OpenAI';
+                } else if (connTypeLower.includes('aws') || connTypeLower.includes('bedrock') || connTypeLower.includes('s3')) {
+                    connType = 'AWS_Bedrock';
+                }
+
+                const exists = connections.some(c => c.type === connType && c.dependency === opValue);
+                if (!exists) {
+                    connections.push({
+                        dependency: opValue,
+                        fields: credentialFields,
+                        type: connType
+                    });
+                }
+            }
+            
+            Object.values(resolved.properties).forEach(prop => scanSchema(prop, opValue));
         }
 
         if (resolved.discriminator || resolved.oneOf) {
@@ -70,31 +154,27 @@ function autoDiscoverConnections(schemaObj) {
                     subSchema = resolveDef(subSchema.$ref, defs);
                 }
                 if (subSchema && subSchema.properties) {
-                    const fields = Object.keys(subSchema.properties).filter(f => f !== propName);
-                    
-                    let connType = 'Service';
-                    const depLower = dependencyVal.toLowerCase();
-                    if (depLower.includes('azure')) {
-                        connType = 'Azure_OpenAI';
-                    } else if (depLower.includes('aws') || depLower.includes('bedrock')) {
-                        connType = 'AWS_Bedrock';
-                    } else if (depLower.includes('twilio')) {
-                        connType = 'Twilio';
-                    } else if (depLower.includes('slack')) {
-                        connType = 'Slack';
-                    } else {
-                        connType = dependencyVal.charAt(0).toUpperCase() + dependencyVal.slice(1);
-                    }
+                    const fields = Object.keys(subSchema.properties).filter(f => f !== propName && isCredentialField(f));
+                    if (fields.length >= 2) {
+                        let connType = inferConnectionType(fields, dependencyVal.charAt(0).toUpperCase() + dependencyVal.slice(1));
+                        const connTypeLower = connType.toLowerCase();
+                        if (connTypeLower.includes('azure')) {
+                            connType = 'Azure_OpenAI';
+                        } else if (connTypeLower.includes('aws') || connTypeLower.includes('bedrock') || connTypeLower.includes('s3')) {
+                            connType = 'AWS_Bedrock';
+                        }
 
-                    const exists = connections.some(c => c.dependency === dependencyVal && c.type === connType);
-                    if (!exists && fields.length > 0) {
-                        connections.push({
-                            dependency: dependencyVal,
-                            fields: fields,
-                            type: connType
-                        });
+                        const exists = connections.some(c => c.dependency === dependencyVal && c.type === connType);
+                        if (!exists) {
+                            connections.push({
+                                dependency: dependencyVal,
+                                fields: fields,
+                                type: connType
+                            });
+                        }
                     }
                 }
+                scanSchema(mappingVal, dependencyVal);
             });
         }
     }
@@ -105,13 +185,17 @@ function autoDiscoverConnections(schemaObj) {
 
 function initializeConnectionsMeta(schema) {
     if (!window.TOOL_META) window.TOOL_META = {};
-    if (!window.TOOL_META.connection_name) {
-        window.TOOL_META.connection_name = [];
-    }
-    if (!Array.isArray(window.TOOL_META.connection_name)) {
-        window.TOOL_META.connection_name = [window.TOOL_META.connection_name];
+    
+    // If the tool already provides specific connections, respect them and skip auto-discovery
+    if (window.TOOL_META.connection_name && 
+        (Array.isArray(window.TOOL_META.connection_name) ? window.TOOL_META.connection_name.length > 0 : true)) {
+        if (!Array.isArray(window.TOOL_META.connection_name)) {
+            window.TOOL_META.connection_name = [window.TOOL_META.connection_name];
+        }
+        return;
     }
 
+    window.TOOL_META.connection_name = [];
     const discoveredConnections = autoDiscoverConnections(schema);
     discoveredConnections.forEach(d => {
         const exists = window.TOOL_META.connection_name.some(c => 
@@ -126,37 +210,35 @@ function initializeConnectionsMeta(schema) {
 
 function isAlwaysShow(name, fullId = '', dotId = '') {
     const meta = window.TOOL_META || {};
+    const fieldNames = [name, fullId, dotId].filter(Boolean);
+    
     if (meta.connection_name) {
         const rawConns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
         const connectionFields = [];
         rawConns.forEach(c => {
             const rawFields = c.fields || Object.keys(c).filter(k => k !== 'type' && k !== 'fields' && k !== 'dependency');
             const fields = Array.isArray(rawFields) ? rawFields : String(rawFields).split(',').map(s => s.trim()).filter(Boolean);
-            fields.forEach(f => connectionFields.push(slugify(f)));
+            fields.forEach(f => connectionFields.push(f));
         });
         
-        const fieldNames = [name, fullId, dotId].filter(Boolean).map(f => slugify(f));
         const isMappedToConnection = fieldNames.some(fn => 
-            connectionFields.some(cf => fn === cf || fn.endsWith('_' + cf) || fn.endsWith('.' + cf))
+            connectionFields.some(cf => fieldsMatch(fn, cf))
         );
         if (isMappedToConnection) {
             return false;
         }
     }
 
-    const fields = [name, fullId, dotId].filter(Boolean);
-    return fields.some(f => {
-        const slug = slugify(f);
-        return Array.from(ALWAYS_SHOW_FIELDS).some(always => 
-            slug === always || 
-            slug.endsWith('_' + always) || 
-            slug.endsWith('.' + always)
-        );
-    });
+    return fieldNames.some(f => 
+        Array.from(ALWAYS_SHOW_FIELDS).some(always => fieldsMatch(f, always))
+    );
 }
 
 function generateDisplayProperties(schema, skipFields, meta) {
-    const defs = schema.$defs || schema.definitions || {};
+    const defs = schema.$defs || 
+                 schema.definitions || 
+                 (schema.properties && (schema.properties.$defs || schema.properties.definitions)) || 
+                 {};
 
     function resolve(s) {
         return s.$ref ? (resolveDef(s.$ref, defs) || s) : s;
@@ -164,17 +246,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
 
     function shouldSkip(name, fullName) {
         if (isAlwaysShow(name, fullName)) return false;
-        const nSlug = slugify(name);
-        const fSlug = slugify(fullName);
-        const dotSlug = slugify(fullName.replace(/__/g, '.'));
-        return skipFields.some(sf => {
-            const sfSlug = slugify(sf);
-            return sfSlug === nSlug ||
-                sfSlug === fSlug ||
-                sfSlug === dotSlug ||
-                nSlug.endsWith('_' + sfSlug) ||
-                nSlug.endsWith('.' + sfSlug);
-        });
+        return skipFields.some(sf => fieldsMatch(name, sf) || fieldsMatch(fullName, sf));
     }
 
     function getConnectionsFor(opValue = null) {
@@ -207,12 +279,10 @@ function generateDisplayProperties(schema, skipFields, meta) {
         let resolved = resolve(currentSchema);
         let nodes = [];
 
-        // Discriminator
         if (resolved.discriminator) {
             const propName = resolved.discriminator.propertyName;
             let mapping = resolved.discriminator.mapping || {};
 
-            // Auto-build mapping if missing
             if (Object.keys(mapping).length === 0 && resolved.oneOf) {
                 resolved.oneOf.forEach(sub => {
                     let subRes = resolve(sub);
@@ -248,16 +318,18 @@ function generateDisplayProperties(schema, skipFields, meta) {
             return nodes;
         }
 
-        // Normal properties
         if (resolved.properties) {
             const reqList = resolved.required || [];
             Object.entries(resolved.properties).forEach(([name, propSchema]) => {
-                if (name === skipProp) return; // Skip discriminator field in child
+                if (name === skipProp) return;
 
                 const fullName = prefix ? `${prefix}${name}` : name;
                 if (shouldSkip(name, fullName)) return;
 
                 let pResolved = resolve(propSchema);
+                
+                // Connection checking at this level is handled globally via dependencies above.
+
                 const origTitle = pResolved.title;
                 const origDesc = pResolved.description;
                 const origDefault = pResolved.default;
@@ -265,8 +337,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
                 if (pResolved.anyOf) {
                     const nonNull = pResolved.anyOf.find(s => s.type !== 'null');
                     if (nonNull) {
-                        pResolved = nonNull;
-                        pResolved = resolve(pResolved);
+                        pResolved = resolve(nonNull);
                     }
                 }
 
@@ -325,8 +396,6 @@ function generateDisplayProperties(schema, skipFields, meta) {
 
 function updateMetadataDisplay(skipFields) {
     const meta = window.TOOL_META || {};
-    console.log('window.TOOL_METAwindow.TOOL_METAwindow.TOOL_META', window.TOOL_META)
-
     const schema = window.TOOL_SCHEMA || {};
     const displayProps = generateDisplayProperties(schema, skipFields, meta);
 
@@ -382,14 +451,14 @@ function setupMetadataUI() {
                 setTimeout(() => {
                     copyBtn.innerHTML = orig;
                     if (window.lucide) lucide.createIcons();
-                }, 20000);
+                }, 2000);
             });
         });
     }
 
     const rawMetaPre = document.getElementById('raw-meta-json');
     if (rawMetaPre) {
-        rawMetaPre.textContent = JSON.stringify(window.TOOL_META || {}, null, 2);
+        rawMetaPre.textContent = JSON.stringify(window.RAW_TOOL_META || {}, null, 2);
     }
 
     const copyRawMetaBtn = document.getElementById('copy-raw-meta-btn');
@@ -403,7 +472,7 @@ function setupMetadataUI() {
                 setTimeout(() => {
                     copyRawMetaBtn.innerHTML = orig;
                     if (window.lucide) lucide.createIcons();
-                }, 20000);
+                }, 2000);
             });
         });
     }

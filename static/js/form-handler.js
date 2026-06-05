@@ -1,5 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Registry of Quill instances keyed by field id, for flush-before-submit
     const quillInstances = {};
     const schema = window.TOOL_SCHEMA || {};
     let activeConnections = [];
@@ -8,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeBtn = document.querySelector('.close-modal');
     const resultPayload = document.getElementById('result-payload');
     const toolForm = document.getElementById('tool-form');
+    
     initializeConnectionsMeta(schema);
 
     // ─── Create a labelled form-group ──────────────────────────────────────────
@@ -44,13 +44,9 @@ document.addEventListener('DOMContentLoaded', () => {
         sel.innerHTML = `<option value="">Choose a ${displayConnType} connection...</option>`;
 
         const availableConns = window.CAREGENCE_CONNECTIONS || [];
-
         availableConns.forEach(c => {
             const cType = (c.connection_type || '').toLowerCase();
             const allowedTypes = connTypes.map(t => (t || '').toLowerCase());
-
-            // If the metadata asks for a specific type (e.g., 'twilio'), only show matches.
-            // If it just says 'service' (the generic default), show all connections to be safe.
             const isMatch = allowedTypes.includes(cType) || allowedTypes.includes('service');
 
             if (isMatch) {
@@ -68,10 +64,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ─── Build field for a single property ─────────────────────────────────────
     function buildField(name, fieldSchema, requiredList, defs, namePrefix = '', fieldMeta = {}) {
         const required = requiredList && requiredList.includes(name);
-        // const fullId = namePrefix ? `${namePrefix}__${name}` : name;
         const fullId = namePrefix ? `${namePrefix}_${name}` : name;
 
-        // Resolve anyOf with null → optional field
         let effectiveSchema = fieldSchema;
         if (fieldSchema.anyOf) {
             const nonNull = fieldSchema.anyOf.find(s => s.type !== 'null');
@@ -82,23 +76,56 @@ document.addEventListener('DOMContentLoaded', () => {
         const desc = effectiveSchema.description || fieldSchema.description || '';
         const defaultVal = effectiveSchema.default !== undefined ? effectiveSchema.default : fieldSchema.default;
 
-        // ── meta.fields type override ─────────────────────────────────────────
-        // If meta.fields[name].type is set, render the appropriate input widget
-        // and return early — before the schema-driven type checks below.
         const metaType = fieldMeta.type;
-        if (metaType === 'textarea') {
+
+        // Custom widget overrides: HTML (Quill editor)
+        if (metaType === 'html') {
             const group = makeGroup(fullId, label, required, true);
-            const ta = document.createElement('textarea');
-            ta.id = fullId;
-            ta.name = fullId;
-            ta.placeholder = desc || '';
-            ta.rows = fieldMeta.rows || 4;
-            if (defaultVal !== undefined && defaultVal !== null) ta.value = defaultVal;
-            if (required) ta.required = true;
-            group.appendChild(ta);
+            const editorWrapper = document.createElement('div');
+            editorWrapper.className = 'quill-editor-wrapper';
+
+            const editorDiv = document.createElement('div');
+            editorDiv.className = 'quill-editor-surface';
+            if (defaultVal) editorDiv.innerHTML = defaultVal;
+            editorWrapper.appendChild(editorDiv);
+
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.id = fullId;
+            hidden.name = fullId;
+            hidden.value = defaultVal || '';
+            editorWrapper.appendChild(hidden);
+
+            group.appendChild(editorWrapper);
             addHelp(group, desc);
+
+            requestAnimationFrame(() => {
+                if (typeof Quill === 'undefined') return;
+                const quill = new Quill(editorDiv, {
+                    theme: 'snow',
+                    placeholder: desc || 'Enter rich text…',
+                    modules: {
+                        toolbar: [
+                            [{ header: [1, 2, 3, false] }],
+                            ['bold', 'italic', 'underline', 'strike'],
+                            [{ color: [] }, { background: [] }],
+                            [{ list: 'ordered' }, { list: 'bullet' }],
+                            [{ indent: '-1' }, { indent: '+1' }],
+                            ['blockquote', 'code-block'],
+                            ['link', 'image'],
+                            ['clean']
+                        ]
+                    }
+                });
+                quill.on('text-change', () => {
+                    hidden.value = quill.root.innerHTML;
+                });
+                quillInstances[fullId] = { quill, hidden };
+            });
             return group;
         }
+
+        // Custom widget overrides: File upload
         if (metaType === 'file') {
             const group = makeGroup(fullId, label, required, true);
             const wrapper = document.createElement('div');
@@ -120,7 +147,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span><strong>Click to upload</strong> or drag &amp; drop</span>
                 <span class="file-upload-hint">${hintText}</span>`;
 
-            // Update the label when files are selected
             inp.addEventListener('change', () => {
                 const files = [...inp.files];
                 if (files.length === 0) return;
@@ -132,7 +158,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (window.lucide) lucide.createIcons();
             });
 
-            // Drag-and-drop visual feedback
             wrapper.addEventListener('dragover', e => { e.preventDefault(); wrapper.classList.add('drag-over'); });
             wrapper.addEventListener('dragleave', () => wrapper.classList.remove('drag-over'));
             wrapper.addEventListener('drop', () => wrapper.classList.remove('drag-over'));
@@ -143,119 +168,30 @@ document.addEventListener('DOMContentLoaded', () => {
             addHelp(group, desc);
             return group;
         }
-        if (metaType === 'datetime') {
-            const group = makeGroup(fullId, label, required);
-            const inp = document.createElement('input');
-            inp.type = 'datetime-local';
-            inp.id = fullId;
-            inp.name = fullId;
-            if (defaultVal) inp.value = defaultVal;
-            if (required) inp.required = true;
-            group.appendChild(inp);
-            addHelp(group, desc);
-            return group;
-        }
-        if (metaType === 'date') {
-            const group = makeGroup(fullId, label, required);
-            const inp = document.createElement('input');
-            inp.type = 'date';
-            inp.id = fullId;
-            inp.name = fullId;
-            if (defaultVal) inp.value = defaultVal;
-            if (required) inp.required = true;
-            group.appendChild(inp);
-            addHelp(group, desc);
-            return group;
-        }
-        if (metaType === 'color') {
-            const group = makeGroup(fullId, label, required);
-            const inp = document.createElement('input');
-            inp.type = 'color';
-            inp.id = fullId;
-            inp.name = fullId;
-            inp.value = defaultVal || '#000000';
-            group.appendChild(inp);
-            addHelp(group, desc);
-            return group;
-        }
-        if (metaType === 'email' || metaType === 'url' || metaType === 'password') {
-            const group = makeGroup(fullId, label, required);
-            const inp = document.createElement('input');
-            inp.type = metaType;
-            inp.id = fullId;
-            inp.name = fullId;
-            inp.placeholder = desc || '';
-            if (defaultVal !== undefined && defaultVal !== null) inp.value = defaultVal;
-            if (required) inp.required = true;
-            group.appendChild(inp);
-            addHelp(group, desc);
-            return group;
-        }
-        if (metaType === 'html') {
+
+        // Custom widget overrides: Textarea
+        if (metaType === 'textarea') {
             const group = makeGroup(fullId, label, required, true);
-
-            // Wrapper that Quill will attach to
-            const editorWrapper = document.createElement('div');
-            editorWrapper.className = 'quill-editor-wrapper';
-
-            // The actual editable surface Quill mounts inside
-            const editorDiv = document.createElement('div');
-            editorDiv.className = 'quill-editor-surface';
-            if (defaultVal) editorDiv.innerHTML = defaultVal;
-            editorWrapper.appendChild(editorDiv);
-
-            // Hidden input that carries the HTML value through FormData
-            const hidden = document.createElement('input');
-            hidden.type = 'hidden';
-            hidden.id = fullId;
-            hidden.name = fullId;
-            hidden.value = defaultVal || '';
-            editorWrapper.appendChild(hidden);
-
-            group.appendChild(editorWrapper);
+            const ta = document.createElement('textarea');
+            ta.id = fullId;
+            ta.name = fullId;
+            ta.placeholder = desc || '';
+            ta.rows = fieldMeta.rows || 4;
+            if (defaultVal !== undefined && defaultVal !== null) ta.value = defaultVal;
+            if (required) ta.required = true;
+            group.appendChild(ta);
             addHelp(group, desc);
-
-            // Initialise Quill after the element is in the DOM
-            // (requestAnimationFrame ensures the element is painted first)
-            requestAnimationFrame(() => {
-                if (typeof Quill === 'undefined') return;
-                const quill = new Quill(editorDiv, {
-                    theme: 'snow',
-                    placeholder: desc || 'Enter rich text…',
-                    modules: {
-                        toolbar: [
-                            [{ header: [1, 2, 3, false] }],
-                            ['bold', 'italic', 'underline', 'strike'],
-                            [{ color: [] }, { background: [] }],
-                            [{ list: 'ordered' }, { list: 'bullet' }],
-                            [{ indent: '-1' }, { indent: '+1' }],
-                            ['blockquote', 'code-block'],
-                            ['link', 'image'],
-                            ['clean']
-                        ]
-                    }
-                });
-
-                // Sync HTML → hidden input on every change
-                quill.on('text-change', () => {
-                    hidden.value = quill.root.innerHTML;
-                });
-
-                // Register globally so submit handler can flush
-                quillInstances[fullId] = { quill, hidden };
-            });
-
             return group;
         }
 
-        // const → read-only display badge
+        // Const value field (readonly display badge)
         if ('const' in fieldSchema || 'const' in effectiveSchema) {
             const constVal = fieldSchema.const !== undefined ? fieldSchema.const : effectiveSchema.const;
             const group = makeGroup(fullId, label, false);
             const badge = document.createElement('span');
             badge.className = 'const-field';
             badge.innerHTML = `<i data-lucide="lock" style="width:13px;height:13px;"></i> ${constVal}`;
-            // Store as hidden so it's submitted
+            
             const hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.name = fullId;
@@ -266,19 +202,21 @@ document.addEventListener('DOMContentLoaded', () => {
             return group;
         }
 
-        // enum → select
-        if (effectiveSchema.enum) {
+        // Enum or Boolean select field
+        if (effectiveSchema.enum || effectiveSchema.type === 'boolean') {
             const group = makeGroup(fullId, label, required);
             const sel = document.createElement('select');
             sel.id = fullId;
             sel.name = fullId;
             if (required) sel.required = true;
             sel.innerHTML = `<option value="">Select ${label}...</option>`;
-            effectiveSchema.enum.forEach(v => {
+
+            const opts = effectiveSchema.enum || [true, false];
+            opts.forEach(v => {
                 const opt = document.createElement('option');
                 opt.value = v;
-                opt.textContent = v;
-                if (defaultVal === v) opt.selected = true;
+                opt.textContent = typeof v === 'boolean' ? (v ? 'True' : 'False') : v;
+                if (defaultVal === v || String(defaultVal) === String(v)) opt.selected = true;
                 sel.appendChild(opt);
             });
             group.appendChild(sel);
@@ -286,39 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return group;
         }
 
-        // boolean → select
-        if (effectiveSchema.type === 'boolean') {
-            const group = makeGroup(fullId, label, required);
-            const sel = document.createElement('select');
-            sel.id = fullId;
-            sel.name = fullId;
-            if (required) sel.required = true;
-            sel.innerHTML = `
-                <option value="">Select...</option>
-                <option value="true" ${defaultVal === true ? 'selected' : ''}>True</option>
-                <option value="false" ${defaultVal === false ? 'selected' : ''}>False</option>
-            `;
-            group.appendChild(sel);
-            addHelp(group, desc);
-            return group;
-        }
-
-        // integer / number
-        if (effectiveSchema.type === 'integer' || effectiveSchema.type === 'number') {
-            const group = makeGroup(fullId, label, required);
-            const inp = document.createElement('input');
-            inp.type = 'number';
-            inp.id = fullId;
-            inp.name = fullId;
-            inp.placeholder = desc || '';
-            if (defaultVal !== undefined) inp.value = defaultVal;
-            if (required) inp.required = true;
-            group.appendChild(inp);
-            addHelp(group, desc);
-            return group;
-        }
-
-        // array
+        // Array value collection field
         if (effectiveSchema.type === 'array') {
             const group = makeGroup(fullId, label, required, true);
             const wrapper = document.createElement('div');
@@ -368,15 +274,33 @@ document.addEventListener('DOMContentLoaded', () => {
             return group;
         }
 
-        // default: string text input
+        // Standard HTML inputs (datetime, date, color, email, url, password, number, text)
+        const standardInputTypes = {
+            'datetime': 'datetime-local',
+            'date': 'date',
+            'color': 'color',
+            'email': 'email',
+            'url': 'url',
+            'password': 'password',
+            'integer': 'number',
+            'number': 'number',
+            'string': 'text'
+        };
+
+        const inputType = standardInputTypes[metaType] || standardInputTypes[effectiveSchema.type] || 'text';
+        
         const group = makeGroup(fullId, label, required);
         const inp = document.createElement('input');
-        inp.type = 'text';
+        inp.type = inputType;
         inp.id = fullId;
         inp.name = fullId;
         inp.placeholder = desc || '';
-        if (defaultVal !== undefined && defaultVal !== null) inp.value = defaultVal;
         if (required) inp.required = true;
+        if (inputType === 'color') {
+            inp.value = defaultVal || '#000000';
+        } else if (defaultVal !== undefined && defaultVal !== null) {
+            inp.value = defaultVal;
+        }
         group.appendChild(inp);
         addHelp(group, desc);
         return group;
@@ -389,40 +313,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const reqList = objSchema.required || [];
         const grid = document.createElement('div');
         grid.className = 'fields-grid';
-        // Lookup meta.fields once for this render pass
         const metaFields = (window.TOOL_META && window.TOOL_META.fields) || {};
 
         Object.entries(props).forEach(([name, fieldSchema]) => {
-            // const fullId = namePrefix ? `${namePrefix}${name}` : name;
             const fullId = namePrefix ? `${namePrefix}_${name}` : name;
             const dotId = namePrefix ? `${namePrefix.replace(/_/g, '.')}.${name}` : name;
-            // const dotId = namePrefix ? `${namePrefix.replace(/__/g, '.')}${name}` : name;
 
-            const shouldSkip = !isAlwaysShow(name, fullId, dotId) && skipKeys.some(sk => {
-                const sSlug = slugify(sk);
-                const nSlug = slugify(name);
-                const fSlug = slugify(fullId);
-                const dSlug = slugify(dotId);
-                return sSlug === nSlug ||
-                    sSlug === fSlug ||
-                    sSlug === dSlug ||
-                    sSlug.endsWith('__' + nSlug) ||
-                    sSlug.endsWith('.' + nSlug) ||
-                    nSlug.endsWith('__' + sSlug) ||
-                    nSlug.endsWith('.' + sSlug);
-            });
-            if (shouldSkip) return;
-            // Resolve $ref
             let resolved = fieldSchema;
             if (fieldSchema.$ref) {
                 resolved = resolveDef(fieldSchema.$ref, defs) || fieldSchema;
             }
 
-            // Handle nested discriminated unions
+            // Nest connection check: We no longer do this by matching schema here.
+            // Connections are handled globally and inside discriminators via c.dependency.
+
+            const shouldSkip = !isAlwaysShow(name, fullId, dotId) && skipKeys.some(sk => 
+                fieldsMatch(name, sk) || fieldsMatch(fullId, sk) || fieldsMatch(dotId, sk)
+            );
+            if (shouldSkip) return;
+
             let nestedResolved = resolved;
             if (nestedResolved.anyOf) {
                 const nonNullSchema = nestedResolved.anyOf.find(s => s.type !== 'null');
-
                 if (nonNullSchema) {
                     nestedResolved = {
                         ...nonNullSchema,
@@ -430,7 +342,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         description: nestedResolved.description,
                         default: nestedResolved.default
                     };
-
                     if (nestedResolved.$ref) {
                         nestedResolved = {
                             ...(resolveDef(nestedResolved.$ref, defs) || nestedResolved),
@@ -445,7 +356,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 nestedResolved = resolveDef(nestedResolved.$ref, defs) || nestedResolved;
             }
 
-            // Auto inject discriminator
             if (!nestedResolved.discriminator && nestedResolved.oneOf) {
                 nestedResolved.discriminator = { propertyName: "type" };
             }
@@ -460,10 +370,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 buildDiscriminatedUnion(nestedResolved, defs, nestedSection, 1, skipKeys, activeConnections);
                 grid.appendChild(nestedSection);
-                return; // Skip normal field rendering
+                return;
             }
 
-            // Pass per-field meta (e.g. { type: 'file', multiple: true })
             const fieldMeta = metaFields[name] || {};
             const fieldEl = buildField(name, nestedResolved, reqList, defs, namePrefix, fieldMeta);
             if (fieldEl) grid.appendChild(fieldEl);
@@ -473,56 +382,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ─── Post-render sweep helper ───────────────────────────────────────────────
-    // Removes any rendered form groups whose field name is in skipFields.
-    // Called both after initial render and after every dynamic discriminated-union re-render.
     function sweepSkipFields(container, skipFields) {
         if (!skipFields || skipFields.length === 0) return;
-        skipFields.forEach(fieldName => {
-            if (isAlwaysShow(fieldName)) return;
-            const fSlug = slugify(fieldName);
-            container.querySelectorAll(`[data-field-name]`).forEach(el => {
-                const nameAttr = el.dataset.fieldName;
-                if (!nameAttr) return;
-                if (isAlwaysShow(nameAttr)) return;
-                // const dotNameAttr = nameAttr.replace(/__/g, '.');
-                const dotNameAttr = nameAttr.replace(/_/g, '.')
+        
+        container.querySelectorAll(`[data-field-name]`).forEach(el => {
+            const nameAttr = el.dataset.fieldName;
+            if (!nameAttr || isAlwaysShow(nameAttr) || nameAttr.startsWith('connection_name')) return;
 
-                // const rawName = nameAttr.split('__').pop();
-                const rawName = nameAttr.split('_').pop();
-                const nSlug = slugify(nameAttr);
-                const dnSlug = slugify(dotNameAttr);
-                const rSlug = slugify(rawName);
-
-                if (nSlug === fSlug ||
-                    dnSlug === fSlug ||
-                    rSlug === fSlug ||
-                    nSlug.endsWith('_' + fSlug) ||
-                    nSlug.endsWith('.' + fSlug)) {
-                    el.remove();
-                }
-            });
+            const shouldRemove = skipFields.some(sf => !isAlwaysShow(sf) && fieldsMatch(nameAttr, sf));
+            if (shouldRemove) {
+                el.remove();
+            }
         });
-        // Remove any sections / op-fields-sections left empty after the sweep
+
         container.querySelectorAll('.schema-section, .op-fields-section').forEach(section => {
-            const hasFormGroup = !!section.querySelector('.form-group');
-            const hasDiscriminator = !!section.querySelector('.discriminator-step');
-            if (!hasFormGroup && !hasDiscriminator) {
+            if (!section.querySelector('.form-group') && !section.querySelector('.discriminator-step')) {
                 section.remove();
             }
         });
     }
 
     // ─── Discriminated Union Renderer ──────────────────────────────────────────
-    // Handles schemas with discriminator.propertyName and oneOf / mapping.
-    // skipFields is propagated so credential fields are hidden on every re-render.
     function buildDiscriminatedUnion(payloadSchema, defs, container, level = 1, skipFields = [], connections = []) {
         const discriminator = payloadSchema.discriminator;
         if (!discriminator) return false;
 
-        const propName = discriminator.propertyName; // e.g. "platform"
+        const propName = discriminator.propertyName;
         let mapping = discriminator.mapping || {};
 
-        // Auto-build mapping from oneOf if missing (Pydantic often emits oneOf without mapping)
         if ((!mapping || Object.keys(mapping).length === 0) && payloadSchema.oneOf) {
             mapping = {};
             payloadSchema.oneOf.forEach(schema => {
@@ -533,13 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const discField = resolvedSchema.properties?.[propName];
                 if (!discField) return;
 
-                let discValue = null;
-                if (discField.const !== undefined) {
-                    discValue = discField.const;
-                } else if (discField.enum && discField.enum.length) {
-                    discValue = discField.enum[0];
-                }
-
+                let discValue = discField.const !== undefined ? discField.const : (discField.enum && discField.enum[0]);
                 if (discValue) {
                     mapping[discValue] = schema;
                 }
@@ -548,7 +429,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const options = Object.keys(mapping);
 
-        // Step container
         const step = document.createElement('div');
         step.className = 'discriminator-step';
 
@@ -557,7 +437,6 @@ document.addEventListener('DOMContentLoaded', () => {
         stepLabel.innerHTML = `<span class="step-badge">${level}</span> Select ${propName.charAt(0).toUpperCase() + propName.slice(1)}`;
         step.appendChild(stepLabel);
 
-        // Select for the discriminator property
         const sel = document.createElement('select');
         sel.id = `disc_${propName}_${level}`;
         sel.name = propName;
@@ -571,7 +450,6 @@ document.addEventListener('DOMContentLoaded', () => {
         step.appendChild(sel);
         container.appendChild(step);
 
-        // Placeholder where nested content will be inserted
         const nested = document.createElement('div');
         nested.id = `disc_nested_${propName}_${level}`;
         container.appendChild(nested);
@@ -579,46 +457,20 @@ document.addEventListener('DOMContentLoaded', () => {
         sel.addEventListener('change', () => {
             nested.innerHTML = '';
             const chosen = sel.value;
-            console.log(`[Discriminator Change] Chosen option: "${chosen}" on discriminator: "${propName}"`);
             if (!chosen) return;
 
             const mappingValue = mapping[chosen];
-            console.log(`[Discriminator Change] Mapping value for "${chosen}":`, mappingValue);
-            if (!mappingValue) {
-                console.warn(`[Discriminator Change] No mapping found for "${chosen}" in discriminator mapping:`, mapping);
-                return;
-            }
+            if (!mappingValue) return;
 
-            // Merge discriminator propName + caller's skipFields into one skip list
             const mergedSkip = [propName, ...skipFields.filter(f => f !== propName)];
 
-            // Resolve mappingValue to actual schema definition (can be string ref or object schema)
-            let def = null;
-            if (typeof mappingValue === 'string') {
-                def = resolveDef(mappingValue, defs);
-                console.log(`[Discriminator Change] Resolved string ref "${mappingValue}" to schema definition:`, def);
-            } else if (typeof mappingValue === 'object' && mappingValue !== null) {
-                if (mappingValue.$ref) {
-                    def = resolveDef(mappingValue.$ref, defs);
-                    console.log(`[Discriminator Change] Resolved object ref "${mappingValue.$ref}" to schema definition:`, def);
-                } else {
-                    def = mappingValue;
-                    console.log(`[Discriminator Change] Using direct object schema:`, def);
-                }
-            }
+            const ref = typeof mappingValue === 'string' ? mappingValue : mappingValue.$ref;
+            const def = ref ? resolveDef(ref, defs) : mappingValue;
+            if (!def) return;
 
-            if (!def) {
-                console.error(`[Discriminator Change] Could not resolve schema definition for mapping value:`, mappingValue, `with defs:`, defs);
-                return;
-            }
-
-            // If the resolved schema has discriminator/oneOf, it is a nested discriminated union
             if (def.discriminator || def.oneOf) {
-                console.log(`[Discriminator Change] Nested schema contains discriminator/oneOf, rendering nested discriminated union.`);
                 buildDiscriminatedUnion(def, defs, nested, level + 1, skipFields, connections);
-                if (window.lucide) lucide.createIcons();
             } else {
-                console.log(`[Discriminator Change] Rendering object fields for resolved schema:`, def);
                 const section = document.createElement('div');
                 section.className = 'op-fields-section';
                 const title = document.createElement('h3');
@@ -626,21 +478,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 title.textContent = def.title || chosen;
                 section.appendChild(title);
 
-                // Contextual Connections based on dependency
+                const subSchemaFields = Object.keys(def.properties || {});
                 connections.forEach(c => {
-                    if (c.dependency === chosen) {
+                    const shouldInclude = c.dependency && slugify(c.dependency) === slugify(chosen);
+                    if (shouldInclude) {
                         const connName = connections.length > 1 ? `connection_name_${(c.type || 'service').toLowerCase()}` : 'connection_name';
-                        const connEl = makeConnectionDropdown(c, connName);
-                        section.appendChild(connEl);
+                        section.appendChild(makeConnectionDropdown(c, connName));
                     }
                 });
 
                 buildObjectFields(def, defs, section, '', mergedSkip);
                 nested.appendChild(section);
-                // Safety sweep: remove any remaining skip-fields after re-render
                 sweepSkipFields(nested, skipFields);
-                if (window.lucide) lucide.createIcons();
             }
+            if (window.lucide) lucide.createIcons();
         });
 
         return true;
@@ -654,12 +505,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const properties = schema.properties || {};
         const meta = window.TOOL_META || {};
         let skipFields = [];
-
         let connections = [];
 
-        // Handle connection_name meta to replace fields with connection dropdown
         if (meta.connection_name) {
             const rawConns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
             connections = rawConns.map(c => {
@@ -670,7 +520,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             activeConnections = connections;
 
-            // Render top-level connections (no dependency)
             connections.forEach(c => {
                 if (!c.dependency) {
                     const connSection = document.createElement('div');
@@ -681,14 +530,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     connSection.appendChild(h3);
 
                     const connName = connections.length > 1 ? `connection_name_${(c.type || 'service').toLowerCase()}` : 'connection_name';
-                    const connEl = makeConnectionDropdown(c, connName);
-                    connSection.appendChild(connEl);
+                    connSection.appendChild(makeConnectionDropdown(c, connName));
                     root.appendChild(connSection);
                 }
             });
         }
 
-        // Also handle direct hidden_properties/hidden_property on the meta (e.g. "twilio_account_sid,twilio_auth_token,..." or ["twilio_account_sid", "twilio_auth_token"])
         const rawHidden = meta.hidden_properties || meta.hidden_property;
         if (rawHidden) {
             let hiddenList = [];
@@ -704,21 +551,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateMetadataDisplay(skipFields);
 
-        const defs = schema.$defs || schema.definitions || {};
-        const properties = schema.properties || {};
+        const defs = schema.$defs || 
+                     schema.definitions || 
+                     (schema.properties && (schema.properties.$defs || schema.properties.definitions)) || 
+                     {};
         const required = schema.required || [];
 
-        // Iterate top-level properties
         Object.entries(properties).forEach(([propName, propSchema]) => {
-            if (skipFields.includes(propName) && !isAlwaysShow(propName)) return;
-
-            // Resolve $ref at top level
             let resolved = propSchema;
             if (propSchema.$ref) {
                 resolved = resolveDef(propSchema.$ref, defs) || propSchema;
             }
 
-            // Handle Optional[Union[...]] (Pydantic wraps unions inside anyOf)
+            // Connection checking at this level is handled globally via dependencies above.
+
+            if (skipFields.includes(propName) && !isAlwaysShow(propName)) return;
+
             if (resolved.anyOf) {
                 const nonNullSchema = resolved.anyOf.find(s => s.type !== 'null');
                 if (nonNullSchema) {
@@ -729,12 +577,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // Auto inject discriminator if missing
             if (!resolved.discriminator && resolved.oneOf) {
                 resolved.discriminator = { propertyName: "type" };
             }
 
-            // Check if this property is itself a discriminated union (oneOf + discriminator)
             if (resolved.discriminator || (resolved.oneOf && resolved.discriminator)) {
                 const section = document.createElement('div');
                 section.className = 'schema-section';
@@ -743,7 +589,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Check if it's a plain object (also handle schemas that omit explicit "type":"object")
             if (resolved.properties && (resolved.type === 'object' || !resolved.type)) {
                 const section = document.createElement('div');
                 section.className = 'schema-section';
@@ -756,7 +601,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Flat field
             const section = document.createElement('div');
             section.className = 'schema-section';
             const fieldEl = buildField(propName, resolved, required, defs);
@@ -764,16 +608,12 @@ document.addEventListener('DOMContentLoaded', () => {
             root.appendChild(section);
         });
 
-        // ── Post-render safety sweep (initial render) ────────────────────────
         sweepSkipFields(root, skipFields);
-
         if (window.lucide) lucide.createIcons();
     }
 
     // ─── Collect nested form values ─────────────────────────────────────────────
-    // Builds a nested JSON object from flat `name__subname` field convention
     function collectFormData() {
-        // Flush all Quill editors to their hidden inputs before reading FormData
         Object.values(quillInstances).forEach(({ quill, hidden }) => {
             hidden.value = quill.root.innerHTML;
         });
@@ -820,27 +660,14 @@ document.addEventListener('DOMContentLoaded', () => {
         closeBtn.addEventListener('click', () => modal.classList.remove('active'));
     }
 
-    // (Metadata export & UI logic has been moved to form-utils.js)
-
     // ─── Dynamic Dependencies ───────────────────────────────────────────────────
     function setupDependencies() {
         const meta = window.TOOL_META || {};
-        if (!meta.dependencies || !Array.isArray(meta.dependencies)) {
-            console.log("[Dependencies] No meta.dependencies found for this tool.");
-            return;
-        }
+        if (!meta.dependencies || !Array.isArray(meta.dependencies)) return;
 
-        console.log("[Dependencies] Setting up dependencies:", meta.dependencies);
-
-        // Use event delegation to handle dynamically rendered fields
         root.addEventListener('change', async (e) => {
             if (!e.target || !e.target.name) return;
             const targetName = e.target.name;
-
-            // Helper to check if a field name matches the desired target
-            const isMatch = (name, target) => {
-                return name === target || name.endsWith('__' + target) || name.endsWith('.' + target);
-            };
 
             for (const dep of meta.dependencies) {
                 const on_change = dep.on_change || [];
@@ -850,25 +677,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (!on_value || !action) continue;
 
-                const triggered = on_change.some(triggerName => isMatch(targetName, triggerName));
+                const triggered = on_change.some(triggerName => fieldsMatch(targetName, triggerName));
                 if (triggered) {
-                    console.log(`[Dependencies] Triggered by field '${targetName}' matching '${dep.on_change}'`);
-
-                    // Find active connection ID
-                    const connSelects = Array.from(document.querySelectorAll('select[name^="Credential"], select[name="connection_id"]'));
+                    const connSelects = Array.from(document.querySelectorAll('select[name^="Credential"], select[name^="connection_name"], select[name="connection_id"]'));
                     const activeConnSelect = connSelects.find(s => s.offsetParent !== null && s.value);
                     const connection_id = activeConnSelect ? activeConnSelect.value : null;
 
-                    if (!connection_id) {
-                        console.warn("[Dependencies] No active connection_id found for action:", action);
-                    } else {
-                        console.log(`[Dependencies] Found connection_id: ${connection_id}`);
-                    }
-
-                    // If dependent_value specified, clear it
                     if (dependent_value) {
                         const allInputs = Array.from(root.querySelectorAll('input, select, textarea'));
-                        const depElements = allInputs.filter(el => isMatch(el.name, dependent_value));
+                        const depElements = allInputs.filter(el => fieldsMatch(el.name, dependent_value));
                         depElements.forEach(el => {
                             if (el.tagName === 'SELECT') {
                                 el.innerHTML = `<option value="">Select ${dependent_value}...</option>`;
@@ -878,15 +695,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                     }
 
-                    // Prepare target elements
                     const allInputs = Array.from(root.querySelectorAll('input, select, textarea'));
-                    const targetElements = allInputs.filter(el => isMatch(el.name, on_value));
+                    const targetElements = allInputs.filter(el => fieldsMatch(el.name, on_value));
 
                     targetElements.forEach(el => {
                         if (el.tagName === 'SELECT') {
                             el.innerHTML = `<option value="">Loading options...</option>`;
                         } else {
-                            // Replace input with select
                             const sel = document.createElement('select');
                             sel.id = el.id;
                             sel.name = el.name;
@@ -897,7 +712,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
 
-                    const triggerKey = targetName.split('__').pop();
+                    const triggerKey = targetName.split('_').pop();
                     const payload = {
                         connection_id: connection_id,
                         action: action,
@@ -906,8 +721,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     };
 
-                    console.log("[Dependencies] Sending action payload:", payload);
-
                     try {
                         const response = await fetch('/api/connection-actions/execute', {
                             method: 'POST',
@@ -915,16 +728,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             body: JSON.stringify(payload)
                         });
 
-                        if (!response.ok) throw new Error(`HTTP ${response.status} - Failed to execute connection action`);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
                         const resData = await response.json();
-                        console.log("[Dependencies] Received proxy response:", resData);
                         let optionsList = [];
                         if (resData.data && resData.data.result) {
                             if (Array.isArray(resData.data.result)) {
                                 optionsList = resData.data.result;
                             } else {
-                                // Find the first array in the result object (e.g. 'teams' or 'channels')
                                 for (const key in resData.data.result) {
                                     if (Array.isArray(resData.data.result[key])) {
                                         optionsList = resData.data.result[key];
@@ -942,9 +753,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                         }
 
-                        // Re-fetch target elements in case they were replaced
                         const latestInputs = Array.from(root.querySelectorAll('input, select, textarea'));
-                        const updatedTargetElements = latestInputs.filter(el => isMatch(el.name, on_value));
+                        const updatedTargetElements = latestInputs.filter(el => fieldsMatch(el.name, on_value));
 
                         updatedTargetElements.forEach(el => {
                             el.innerHTML = `<option value="">Select ${on_value}...</option>`;
@@ -960,12 +770,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 el.appendChild(optionEl);
                             });
                         });
-
-                        console.log(`[Dependencies] Successfully updated field '${on_value}' with ${optionsList.length} options.`);
                     } catch (err) {
-                        console.error("[Dependencies] Action Execution Error:", err);
                         const latestInputs = Array.from(root.querySelectorAll('input, select, textarea'));
-                        const updatedTargetElements = latestInputs.filter(el => isMatch(el.name, on_value));
+                        const updatedTargetElements = latestInputs.filter(el => fieldsMatch(el.name, on_value));
                         updatedTargetElements.forEach(el => {
                             el.innerHTML = `<option value="">Error loading options</option>`;
                         });
@@ -975,7 +782,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ─── Boot ───────────────────────────────────────────────────────────────────
     renderForm(schema);
     setupDependencies();
     setupMetadataUI();
