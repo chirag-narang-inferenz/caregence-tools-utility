@@ -89,5 +89,6 @@
     window.TOOL_DESCRIPTION = {{ tool.description | tojson | safe if tool.description else '""' }};
     window.CAREGENCE_CONNECTIONS = {{ connections | tojson | safe if connections else '[]' }};
 </script>
+<script src="{{ url_for('static', filename='js/form-utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/form-handler.js') }}"></script>
 {% endblock %}
