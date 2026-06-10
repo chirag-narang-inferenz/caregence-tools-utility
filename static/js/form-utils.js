@@ -6,12 +6,12 @@ function resolveDef(ref, defs) {
     if (!ref || !defs) return null;
     const key = ref.split('/').pop();
     if (defs[key]) return defs[key];
-    
+
     // Case-insensitive fallback
     const keyLower = key.toLowerCase();
     const foundKey = Object.keys(defs).find(k => k.toLowerCase() === keyLower);
     if (foundKey) return defs[foundKey];
-    
+
     return null;
 }
 
@@ -32,18 +32,12 @@ function schemaMatchesConnection(resolvedSchema, connection) {
     return connFields.every(cf => props.includes(cf));
 }
 
-const ALWAYS_SHOW_FIELDS = new Set([
-    'access_key',
-    'secret_key',
-    'region',
-    'region_name',
-    'aws_sender'
-]);
+
 
 function isCredentialField(fieldName) {
     if (!fieldName) return false;
     const slug = slugify(fieldName);
-    
+
     // Explicitly ignore workflow tracking IDs
     if (slug === 'workflow_id' || slug === 'execution_id') return false;
 
@@ -53,25 +47,25 @@ function isCredentialField(fieldName) {
         'client_id', 'tenant_id', 'account_sid', 'connection', 'string', 'version', 'region'
     ];
     return CREDENTIAL_KEYWORDS.some(kw => slug.includes(kw)) ||
-           slug.endsWith('_id') ||
-           slug.endsWith('_key') ||
-           slug.endsWith('_token') ||
-           slug.endsWith('_secret') ||
-           slug.endsWith('_password');
+        slug.endsWith('_id') ||
+        slug.endsWith('_key') ||
+        slug.endsWith('_token') ||
+        slug.endsWith('_secret') ||
+        slug.endsWith('_password');
 }
 
 function inferConnectionType(fields, fallback) {
     const availableConns = window.CAREGENCE_CONNECTIONS || [];
-    
+
     for (const f of fields) {
         const parts = f.split('_');
         if (parts.length > 1) {
             const prefix = parts[0].toLowerCase();
-            
+
             // Check if prefix matches any connection type in CAREGENCE_CONNECTIONS
             const match = availableConns.find(c => (c.connection_type || '').toLowerCase() === prefix);
             if (match) return match.connection_type;
-            
+
             // Special handling for compound names like azure_openai -> Azure_OpenAI or aws_bedrock -> AWS_Bedrock
             const matchCompound = availableConns.find(c => {
                 const cTypeLower = (c.connection_type || '').toLowerCase();
@@ -84,15 +78,15 @@ function inferConnectionType(fields, fallback) {
 }
 
 function autoDiscoverConnections(schemaObj) {
-    const defs = schemaObj.$defs || 
-                 schemaObj.definitions || 
-                 (schemaObj.properties && (schemaObj.properties.$defs || schemaObj.properties.definitions)) || 
-                 {};
+    const defs = schemaObj.$defs ||
+        schemaObj.definitions ||
+        (schemaObj.properties && (schemaObj.properties.$defs || schemaObj.properties.definitions)) ||
+        {};
     const connections = [];
 
     function scanSchema(s, opValue = null) {
         if (!s) return;
-        
+
         let resolved = s;
         if (s.$ref) {
             resolved = resolveDef(s.$ref, defs) || s;
@@ -123,7 +117,7 @@ function autoDiscoverConnections(schemaObj) {
                     });
                 }
             }
-            
+
             Object.values(resolved.properties).forEach(prop => scanSchema(prop, opValue));
         }
 
@@ -185,9 +179,9 @@ function autoDiscoverConnections(schemaObj) {
 
 function initializeConnectionsMeta(schema) {
     if (!window.TOOL_META) window.TOOL_META = {};
-    
+
     // If the tool already provides specific connections, respect them and skip auto-discovery
-    if (window.TOOL_META.connection_name && 
+    if (window.TOOL_META.connection_name &&
         (Array.isArray(window.TOOL_META.connection_name) ? window.TOOL_META.connection_name.length > 0 : true)) {
         if (!Array.isArray(window.TOOL_META.connection_name)) {
             window.TOOL_META.connection_name = [window.TOOL_META.connection_name];
@@ -198,8 +192,8 @@ function initializeConnectionsMeta(schema) {
     window.TOOL_META.connection_name = [];
     const discoveredConnections = autoDiscoverConnections(schema);
     discoveredConnections.forEach(d => {
-        const exists = window.TOOL_META.connection_name.some(c => 
-            c.dependency === d.dependency || 
+        const exists = window.TOOL_META.connection_name.some(c =>
+            c.dependency === d.dependency ||
             (c.type && c.type.toLowerCase() === d.type.toLowerCase())
         );
         if (!exists) {
@@ -208,44 +202,19 @@ function initializeConnectionsMeta(schema) {
     });
 }
 
-function isAlwaysShow(name, fullId = '', dotId = '') {
-    const meta = window.TOOL_META || {};
-    const fieldNames = [name, fullId, dotId].filter(Boolean);
-    
-    if (meta.connection_name) {
-        const rawConns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
-        const connectionFields = [];
-        rawConns.forEach(c => {
-            const rawFields = c.fields || Object.keys(c).filter(k => k !== 'type' && k !== 'fields' && k !== 'dependency');
-            const fields = Array.isArray(rawFields) ? rawFields : String(rawFields).split(',').map(s => s.trim()).filter(Boolean);
-            fields.forEach(f => connectionFields.push(f));
-        });
-        
-        const isMappedToConnection = fieldNames.some(fn => 
-            connectionFields.some(cf => fieldsMatch(fn, cf))
-        );
-        if (isMappedToConnection) {
-            return false;
-        }
-    }
 
-    return fieldNames.some(f => 
-        Array.from(ALWAYS_SHOW_FIELDS).some(always => fieldsMatch(f, always))
-    );
-}
 
 function generateDisplayProperties(schema, skipFields, meta) {
-    const defs = schema.$defs || 
-                 schema.definitions || 
-                 (schema.properties && (schema.properties.$defs || schema.properties.definitions)) || 
-                 {};
+    const defs = schema.$defs ||
+        schema.definitions ||
+        (schema.properties && (schema.properties.$defs || schema.properties.definitions)) ||
+        {};
 
     function resolve(s) {
         return s.$ref ? (resolveDef(s.$ref, defs) || s) : s;
     }
 
     function shouldSkip(name, fullName) {
-        if (isAlwaysShow(name, fullName)) return false;
         return skipFields.some(sf => fieldsMatch(name, sf) || fieldsMatch(fullName, sf));
     }
 
@@ -265,7 +234,6 @@ function generateDisplayProperties(schema, skipFields, meta) {
                     "type": ["connection"],
                     "title": `Select ${displayConnType} Connection`,
                     "required": true,
-                    "description": `Choose a ${displayConnType} connection...`,
                     "propertyName": propName,
                     "connection_value": connType
                 });
@@ -327,7 +295,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
                 if (shouldSkip(name, fullName)) return;
 
                 let pResolved = resolve(propSchema);
-                
+
                 // Connection checking at this level is handled globally via dependencies above.
 
                 const origTitle = pResolved.title;
@@ -354,8 +322,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
                     propertyName: fullName,
                     type: type,
                     title: origTitle || pResolved.title || name,
-                    required: reqList.includes(name),
-                    description: origDesc || pResolved.description || '',
+                    required: reqList.includes(name)
                 };
 
                 if (meta && meta.dependencies && meta.dependencies.length > 0) {

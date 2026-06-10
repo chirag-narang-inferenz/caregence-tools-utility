@@ -23,14 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return group;
     }
 
-    // ─── Render a help text span ────────────────────────────────────────────────
-    function addHelp(group, text) {
-        if (!text) return;
-        const span = document.createElement('span');
-        span.className = 'field-help';
-        span.textContent = text;
-        group.appendChild(span);
-    }
+    // Help text removed as requested
 
     function makeConnectionDropdown(connMeta, name = 'connection_name') {
         const connTypes = Array.isArray(connMeta.type) ? connMeta.type : [connMeta.type || 'Service'];
@@ -97,7 +90,6 @@ document.addEventListener('DOMContentLoaded', () => {
             editorWrapper.appendChild(hidden);
 
             group.appendChild(editorWrapper);
-            addHelp(group, desc);
 
             requestAnimationFrame(() => {
                 if (typeof Quill === 'undefined') return;
@@ -180,7 +172,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (defaultVal !== undefined && defaultVal !== null) ta.value = defaultVal;
             if (required) ta.required = true;
             group.appendChild(ta);
-            addHelp(group, desc);
             return group;
         }
 
@@ -198,7 +189,6 @@ document.addEventListener('DOMContentLoaded', () => {
             hidden.value = constVal;
             group.appendChild(badge);
             group.appendChild(hidden);
-            addHelp(group, desc);
             return group;
         }
 
@@ -220,7 +210,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 sel.appendChild(opt);
             });
             group.appendChild(sel);
-            addHelp(group, desc);
             return group;
         }
 
@@ -270,7 +259,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             group.appendChild(wrapper);
-            addHelp(group, desc);
             return group;
         }
 
@@ -302,7 +290,6 @@ document.addEventListener('DOMContentLoaded', () => {
             inp.value = defaultVal;
         }
         group.appendChild(inp);
-        addHelp(group, desc);
         return group;
     }
 
@@ -327,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Nest connection check: We no longer do this by matching schema here.
             // Connections are handled globally and inside discriminators via c.dependency.
 
-            const shouldSkip = !isAlwaysShow(name, fullId, dotId) && skipKeys.some(sk =>
+            const shouldSkip = skipKeys.some(sk =>
                 fieldsMatch(name, sk) || fieldsMatch(fullId, sk) || fieldsMatch(dotId, sk)
             );
             if (shouldSkip) return;
@@ -363,10 +350,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (nestedResolved.discriminator || nestedResolved.oneOf) {
                 const nestedSection = document.createElement('div');
                 nestedSection.className = 'nested-discriminator-section';
-                const nestedTitle = document.createElement('h3');
-                nestedTitle.className = 'section-title';
-                nestedTitle.textContent = nestedResolved.title || name;
-                nestedSection.appendChild(nestedTitle);
 
                 buildDiscriminatedUnion(nestedResolved, defs, nestedSection, 1, skipKeys, activeConnections);
                 grid.appendChild(nestedSection);
@@ -387,9 +370,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         container.querySelectorAll(`[data-field-name]`).forEach(el => {
             const nameAttr = el.dataset.fieldName;
-            if (!nameAttr || isAlwaysShow(nameAttr) || nameAttr.startsWith('connection_name')) return;
+            if (!nameAttr || nameAttr.startsWith('connection_name')) return;
 
-            const shouldRemove = skipFields.some(sf => !isAlwaysShow(sf) && fieldsMatch(nameAttr, sf));
+            const shouldRemove = skipFields.some(sf => fieldsMatch(nameAttr, sf));
             if (shouldRemove) {
                 el.remove();
             }
@@ -429,13 +412,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const options = Object.keys(mapping);
 
-        const step = document.createElement('div');
-        step.className = 'discriminator-step';
-
-        const stepLabel = document.createElement('div');
-        stepLabel.className = 'step-label';
-        stepLabel.innerHTML = `<span class="step-badge">${level}</span> Select ${propName.charAt(0).toUpperCase() + propName.slice(1)}`;
-        step.appendChild(stepLabel);
+        const displayLabel = `Select ${propName.charAt(0).toUpperCase() + propName.slice(1)}`;
+        const group = makeGroup(`disc_${propName}_${level}`, displayLabel, true);
 
         const sel = document.createElement('select');
         sel.id = `disc_${propName}_${level}`;
@@ -447,8 +425,8 @@ document.addEventListener('DOMContentLoaded', () => {
             o.textContent = opt;
             sel.appendChild(o);
         });
-        step.appendChild(sel);
-        container.appendChild(step);
+        group.appendChild(sel);
+        container.appendChild(group);
 
         const nested = document.createElement('div');
         nested.id = `disc_nested_${propName}_${level}`;
@@ -473,10 +451,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 const section = document.createElement('div');
                 section.className = 'op-fields-section';
-                const title = document.createElement('h3');
-                title.className = 'section-title';
-                title.textContent = def.title || chosen;
-                section.appendChild(title);
 
                 const subSchemaFields = Object.keys(def.properties || {});
                 connections.forEach(c => {
@@ -524,10 +498,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!c.dependency) {
                     const connSection = document.createElement('div');
                     connSection.className = 'schema-section connection-section';
-                    const h3 = document.createElement('h3');
-                    h3.className = 'section-title';
-                    h3.innerHTML = `<i data-lucide="link" style="width:16px;height:16px;vertical-align:middle;margin-right:8px;"></i>${c.type || 'Service'} Connection`;
-                    connSection.appendChild(h3);
 
                     const connName = connections.length > 1 ? `connection_name_${(c.type || 'service').toLowerCase()}` : 'connection_name';
                     connSection.appendChild(makeConnectionDropdown(c, connName));
@@ -565,7 +535,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Connection checking at this level is handled globally via dependencies above.
 
-            if (skipFields.includes(propName) && !isAlwaysShow(propName)) return;
+            if (skipFields.includes(propName)) return;
 
             if (resolved.anyOf) {
                 const nonNullSchema = resolved.anyOf.find(s => s.type !== 'null');
@@ -592,10 +562,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (resolved.properties && (resolved.type === 'object' || !resolved.type)) {
                 const section = document.createElement('div');
                 section.className = 'schema-section';
-                const h3 = document.createElement('h3');
-                h3.className = 'section-title';
-                h3.textContent = resolved.title || propName;
-                section.appendChild(h3);
                 buildObjectFields(resolved, defs, section, '', skipFields);
                 root.appendChild(section);
                 return;
