@@ -479,13 +479,39 @@ document.addEventListener('DOMContentLoaded', () => {
                 section.appendChild(title);
 
                 const subSchemaFields = Object.keys(def.properties || {});
+                console.log("chosen:", chosen);
+                console.log("schema title:", def.title);
+
                 connections.forEach(c => {
-                    const shouldInclude = c.dependency && slugify(c.dependency) === slugify(chosen);
+
+                    let shouldInclude =
+                        c.dependency &&
+                        slugify(c.dependency) === slugify(chosen);
+
+                    if (shouldInclude && c.sub_dependency) {
+                        shouldInclude =
+                            slugify(c.sub_dependency) ===
+                            slugify(def.title || chosen);
+                    }
+
                     if (shouldInclude) {
-                        const connName = connections.length > 1 ? `connection_name_${(c.type || 'service').toLowerCase()}` : 'connection_name';
-                        section.appendChild(makeConnectionDropdown(c, connName));
+                        const connName =
+                            connections.length > 1
+                                ? `connection_name_${(c.type || 'service').toLowerCase()}`
+                                : 'connection_name';
+
+                        section.appendChild(
+                            makeConnectionDropdown(c, connName)
+                        );
                     }
                 });
+                // connections.forEach(c => {
+                //     const shouldInclude = c.dependency && slugify(c.dependency) === slugify(chosen);
+                //     if (shouldInclude) {
+                //         const connName = connections.length > 1 ? `connection_name_${(c.type || 'service').toLowerCase()}` : 'connection_name';
+                //         section.appendChild(makeConnectionDropdown(c, connName));
+                //     }
+                // });
 
                 buildObjectFields(def, defs, section, '', mergedSkip);
                 nested.appendChild(section);
