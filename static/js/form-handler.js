@@ -539,7 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (meta.connection_name) {
             const rawConns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
             connections = rawConns.map(c => {
-                const rawFields = c.fields || Object.keys(c).filter(k => k !== 'type' && k !== 'fields' && k !== 'dependency');
+                const rawFields = c.fields || Object.keys(c).filter(k => k !== 'type' && k !== 'fields' && k !== 'dependency' && k !== 'sub_dependency');
                 const fields = Array.isArray(rawFields) ? rawFields : String(rawFields).split(',').map(s => s.trim()).filter(Boolean);
                 fields.forEach(f => { if (!skipFields.includes(f)) skipFields.push(f); });
                 return { ...c, fields };

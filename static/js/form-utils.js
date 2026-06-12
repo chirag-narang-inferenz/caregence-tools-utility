@@ -216,7 +216,7 @@ function isAlwaysShow(name, fullId = '', dotId = '') {
         const rawConns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
         const connectionFields = [];
         rawConns.forEach(c => {
-            const rawFields = c.fields || Object.keys(c).filter(k => k !== 'type' && k !== 'fields' && k !== 'dependency');
+            const rawFields = c.fields || Object.keys(c).filter(k => k !== 'type' && k !== 'fields' && k !== 'dependency' && k !== 'sub_dependency');
             const fields = Array.isArray(rawFields) ? rawFields : String(rawFields).split(',').map(s => s.trim()).filter(Boolean);
             fields.forEach(f => connectionFields.push(f));
         });
@@ -249,13 +249,16 @@ function generateDisplayProperties(schema, skipFields, meta) {
         return skipFields.some(sf => fieldsMatch(name, sf) || fieldsMatch(fullName, sf));
     }
 
-    function getConnectionsFor(opValue = null) {
+    function getConnectionsFor(opValue = null, subDepValue = null) {
         if (!meta || !meta.connection_name) return [];
         const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
         let nodes = [];
 
         conns.forEach((c, idx) => {
-            const shouldInclude = opValue === null ? !c.dependency : (slugify(c.dependency) === slugify(opValue));
+            let shouldInclude = opValue === null ? !c.dependency : (c.dependency && slugify(c.dependency) === slugify(opValue));
+            if (shouldInclude && c.sub_dependency) {
+                shouldInclude = !!(subDepValue || opValue) && (slugify(c.sub_dependency) === slugify(subDepValue || opValue));
+            }
             if (shouldInclude) {
                 const connType = c.type || meta.category || 'Service';
                 const displayConnType = Array.isArray(connType) ? connType.join(', ') : connType;
@@ -309,8 +312,9 @@ function generateDisplayProperties(schema, skipFields, meta) {
 
             Object.entries(mapping).forEach(([val, refSchema]) => {
                 const schemaToParse = typeof refSchema === 'string' ? { $ref: refSchema } : refSchema;
+                const resolvedSchema = resolve(schemaToParse);
                 let childNodes = parseSchema(schemaToParse, prefix, propName);
-                let contextualConns = getConnectionsFor(val);
+                let contextualConns = getConnectionsFor(val, resolvedSchema ? resolvedSchema.title : null);
                 discNode.mapping[val] = [...contextualConns, ...childNodes];
             });
 
