@@ -2,6 +2,50 @@ function slugify(s) {
     return String(s || '').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 }
 
+function connectionMatchesSchemaContext(c, chosen, def, namePrefix = '') {
+    if (!c || !c.dependency || !chosen) return false;
+    if (slugify(c.dependency) !== slugify(chosen)) return false;
+    
+    const cleanSubDep = slugify(c.sub_dependency || '');
+    const cleanType = slugify(c.type || '');
+    const cleanPrefix = slugify(namePrefix || '');
+    
+    // Context filter based on property parent name
+    if (cleanPrefix) {
+        if (cleanPrefix.includes('llm')) {
+            const isLLM = cleanSubDep.includes('credential') || cleanSubDep.includes('openai') || cleanSubDep.includes('bedrock') ||
+                          cleanType.includes('openai') || cleanType.includes('bedrock') || cleanType.includes('llm');
+            if (!isLLM) return false;
+        } else if (cleanPrefix.includes('source') || cleanPrefix.includes('operations')) {
+            const isStorageOrOperations = cleanSubDep.includes('config') || cleanSubDep.includes('storage') || cleanSubDep.includes('s3') || cleanSubDep.includes('blob') ||
+                                          cleanType.includes('storage') || cleanType.includes('s3') || cleanType.includes('email') || cleanType.includes('cloud');
+            if (!isStorageOrOperations) return false;
+        }
+    }
+    
+    if (!c.sub_dependency) return true;
+    
+    const cleanTitle = slugify((def && def.title) || '');
+    if (cleanSubDep === cleanTitle || (cleanTitle && (cleanTitle.includes(cleanSubDep) || cleanSubDep.includes(cleanTitle)))) {
+        return true;
+    }
+    
+    // Check property fields overlap
+    if (def && def.properties) {
+        const propKeys = Object.keys(def.properties).map(k => slugify(k));
+        const serviceSpecificFields = ['bucket', 'key', 'container', 'blob', 'azure_openai_endpoint', 'aws_access_key_id'];
+        const connFields = (c.fields || []).map(f => slugify(f));
+        
+        const allMatch = connFields.every(f => propKeys.includes(f));
+        if (allMatch) return true;
+        
+        const hasSpecificMatch = connFields.some(f => serviceSpecificFields.includes(f) && propKeys.includes(f));
+        if (hasSpecificMatch) return true;
+    }
+    
+    return false;
+}
+
 function resolveDef(ref, defs) {
     if (!ref || !defs) return null;
     const key = ref.split('/').pop();
@@ -13,6 +57,33 @@ function resolveDef(ref, defs) {
     if (foundKey) return defs[foundKey];
     
     return null;
+}
+
+function detectDiscriminator(oneOfSchema, defs) {
+    console.log("[MCP Form] detectDiscriminator called with schema:", oneOfSchema);
+    if (!oneOfSchema || !oneOfSchema.oneOf) {
+        console.log("[MCP Form] schema has no oneOf, returning default 'type'");
+        return "type";
+    }
+    const firstSub = oneOfSchema.oneOf[0];
+    if (firstSub) {
+        let resolved = firstSub;
+        if (firstSub.$ref) {
+            resolved = resolveDef(firstSub.$ref, defs) || firstSub;
+            console.log("[MCP Form] resolved $ref to:", resolved);
+        }
+        if (resolved && resolved.properties) {
+            for (const propName of Object.keys(resolved.properties)) {
+                const propVal = resolved.properties[propName];
+                if (propVal && (propVal.const !== undefined || propVal.enum !== undefined)) {
+                    console.log("[MCP Form] detected discriminator property:", propName);
+                    return propName;
+                }
+            }
+        }
+    }
+    console.log("[MCP Form] no discriminator property detected, returning default 'type'");
+    return "type";
 }
 
 function normalizeFieldName(name) {
@@ -128,7 +199,7 @@ function autoDiscoverConnections(schemaObj) {
         }
 
         if (resolved.discriminator || resolved.oneOf) {
-            const discriminator = resolved.discriminator || { propertyName: "type" };
+            const discriminator = resolved.discriminator || { propertyName: detectDiscriminator(resolved, defs) };
             const propName = discriminator.propertyName;
             let mapping = discriminator.mapping || {};
 
@@ -140,9 +211,14 @@ function autoDiscoverConnections(schemaObj) {
                     }
                     const discField = subRes.properties?.[propName];
                     if (discField) {
-                        let discValue = discField.const || (discField.enum && discField.enum[0]);
-                        if (discValue) {
-                            mapping[discValue] = sub;
+                        if (discField.const !== undefined && discField.const !== null) {
+                            mapping[discField.const] = sub;
+                        } else if (discField.enum && Array.isArray(discField.enum)) {
+                            discField.enum.forEach(val => {
+                                if (val !== undefined && val !== null) {
+                                    mapping[val] = sub;
+                                }
+                            });
                         }
                     }
                 });
@@ -249,16 +325,19 @@ function generateDisplayProperties(schema, skipFields, meta) {
         return skipFields.some(sf => fieldsMatch(name, sf) || fieldsMatch(fullName, sf));
     }
 
-    function getConnectionsFor(opValue = null, subDepValue = null) {
+    function getConnectionsFor(opValue = null, resolvedSchema = null, namePrefix = '') {
         if (!meta || !meta.connection_name) return [];
         const conns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
         let nodes = [];
 
         conns.forEach((c, idx) => {
-            let shouldInclude = opValue === null ? !c.dependency : (c.dependency && slugify(c.dependency) === slugify(opValue));
-            if (shouldInclude && c.sub_dependency) {
-                shouldInclude = !!(subDepValue || opValue) && (slugify(c.sub_dependency) === slugify(subDepValue || opValue));
+            let shouldInclude = false;
+            if (opValue === null) {
+                shouldInclude = !c.dependency;
+            } else {
+                shouldInclude = connectionMatchesSchemaContext(c, opValue, resolvedSchema, namePrefix);
             }
+            
             if (shouldInclude) {
                 const connType = c.type || meta.category || 'Service';
                 const displayConnType = Array.isArray(connType) ? connType.join(', ') : connType;
@@ -277,7 +356,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
         return nodes;
     }
 
-    function parseSchema(currentSchema, prefix = '', skipProp = null) {
+    function parseSchema(currentSchema, prefix = '', skipProp = null, parentPath = '') {
         if (!currentSchema) return [];
         let resolved = resolve(currentSchema);
         let nodes = [];
@@ -291,9 +370,14 @@ function generateDisplayProperties(schema, skipFields, meta) {
                     let subRes = resolve(sub);
                     const discField = subRes.properties?.[propName];
                     if (discField) {
-                        let discValue = discField.const || (discField.enum && discField.enum[0]);
-                        if (discValue) {
-                            mapping[discValue] = sub;
+                        if (discField.const !== undefined && discField.const !== null) {
+                            mapping[discField.const] = sub;
+                        } else if (discField.enum && Array.isArray(discField.enum)) {
+                            discField.enum.forEach(val => {
+                                if (val !== undefined && val !== null) {
+                                    mapping[val] = sub;
+                                }
+                            });
                         }
                     }
                 });
@@ -313,8 +397,8 @@ function generateDisplayProperties(schema, skipFields, meta) {
             Object.entries(mapping).forEach(([val, refSchema]) => {
                 const schemaToParse = typeof refSchema === 'string' ? { $ref: refSchema } : refSchema;
                 const resolvedSchema = resolve(schemaToParse);
-                let childNodes = parseSchema(schemaToParse, prefix, propName);
-                let contextualConns = getConnectionsFor(val, resolvedSchema ? resolvedSchema.title : null);
+                let childNodes = parseSchema(schemaToParse, prefix, propName, parentPath ? parentPath + '.' + propName : propName);
+                let contextualConns = getConnectionsFor(val, resolvedSchema, parentPath ? parentPath + '.' + propName : propName);
                 discNode.mapping[val] = [...contextualConns, ...childNodes];
             });
 
@@ -346,7 +430,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
                 }
 
                 if (!pResolved.discriminator && pResolved.oneOf) {
-                    pResolved.discriminator = { propertyName: "type" };
+                    pResolved.discriminator = { propertyName: detectDiscriminator(pResolved, defs) };
                 }
 
                 let type = Array.isArray(pResolved.type) ? pResolved.type : (pResolved.type ? [pResolved.type] : ['string']);
@@ -377,11 +461,11 @@ function generateDisplayProperties(schema, skipFields, meta) {
                 if (pResolved.const !== undefined) node.const = pResolved.const;
 
                 if (pResolved.discriminator || pResolved.oneOf || (pResolved.type === 'object' && pResolved.properties)) {
-                    node.properties = parseSchema(pResolved, '');
+                    node.properties = parseSchema(pResolved, '', null, parentPath ? parentPath + '.' + name : name);
                 } else if (pResolved.type === 'array' && pResolved.items) {
                     let itemsRes = resolve(pResolved.items);
                     if (itemsRes.properties || itemsRes.discriminator || itemsRes.oneOf) {
-                        node.items = parseSchema(itemsRes, '');
+                        node.items = parseSchema(itemsRes, '', null, parentPath ? parentPath + '.' + name : name);
                     }
                 }
 
@@ -392,7 +476,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
         return nodes;
     }
 
-    let rootFields = parseSchema(schema);
+    let rootFields = parseSchema(schema, '', null, '');
     let globalConnections = getConnectionsFor(null);
 
     return [...globalConnections, ...rootFields];

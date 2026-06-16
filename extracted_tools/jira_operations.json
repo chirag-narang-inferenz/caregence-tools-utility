@@ -1,0 +1,803 @@
+{
+  "name": "jira_operations",
+  "description": "Unified Jira MCP tool for Issue and Collaboration operations.\n\nHOW TO USE\n----------\nSend a JSON object with an `operations` field set to one of the\noperation names listed below exactly as written in the schema.\nAll other fields depend on the chosen operation. Fields marked *(required)* must always be supplied;\neverything else is optional and has sensible defaults.\n\nIMPORTANT: Whenever a field asks for an `issue_key`, you MUST\nprovide the actual Jira issue key (format: PROJECT-NUMBER),\nNOT the issue title or summary text. If you only know the title,\nfirst call Search Issues to resolve it to an issue key, then use\nthat key in subsequent operations.\n\n================================================================\nISSUE OPERATIONS\n================================================================\n\nCreate Issue — Create a new Jira issue or sub-task.\nFields:\n    operations          *(required)* — Must be \"Create Issue\".\n    summary             *(required)* — Issue title text.\n    issue_type          — Issue type name. Default is Task.\n                        For Sub-task, parent_key is REQUIRED.\n    description         — Plain-text body of the issue.\n    project_key         — Jira project key. Defaults to server-configured project.\n    assignee_account_id — Atlassian account ID of the assignee.\n    priority            — Priority name string.\n    labels              — List of label strings.\n    components          — List of component name strings.\n    parent_key          — Parent issue key. REQUIRED when issue_type is Sub-task.\n    custom_fields       — Dict of custom field IDs to values.\n\nGet Issue — Retrieve full details of a single issue.\nFields:\n    operations          *(required)* — Must be \"Get Issue\".\n    issue_key           *(required)* — The Jira issue key.\n    fields              — Comma-separated field names to return(\"summary,description,issuetype,project,status,priority,assignee,reporter etc.\"). Empty returns all.\n    expand              — Comma-separated expansions to include.\n\nUpdate Issue — Update one or more fields on an existing issue.\nFields:\n    operations          *(required)* — Must be \"Update Issue\".\n    issue_key           *(required)* — The Jira issue key.\n    summary             — New title.\n    description         — New description.\n    assignee_account_id — New assignee account ID. Set to \"__unassign__\" to clear.\n    priority            — New priority name.\n    labels              — New label list (replaces existing).\n    components          — New component list (replaces existing).\n    custom_fields       — Dict of custom field updates.\n    notify_users        — Boolean, default true. Send email notifications.\n\nDelete Issue — Permanently delete an issue.\nFields:\n    operations          *(required)* — Must be \"Delete Issue\".\n    issue_key           *(required)* — The Jira issue key.\n    delete_subtasks     — Boolean, default false. Set true to also delete sub-tasks.\n\nSearch Issues — Search for Jira issues using JQL or convenience filters.\nFields (all optional, provide at least project_key or jql):\n    operations          *(required)* — Must be \"Search Issues\".\n    jql                 — Raw JQL query string. If set, other filter fields are ignored.\n    project_key         — Filter by project key.\n    status              — Filter by status name.\n    assignee            — Filter by assignee account ID or currentUser().\n    issue_type          — Filter by issue type name.\n    priority            — Filter by priority name.\n    labels              — Comma-separated label names.\n    text                — Free-text search across summary and description.\n    max_results         — Maximum results to return (max 100, default 50).\n    start_at            — Pagination offset (default 0).\n    fields              — Comma-separated fields to return.\n    order_by            — ORDER BY clause. Default is created DESC.\n\nAssign Issue — Assign or unassign an issue.\nFields:\n    operations          *(required)* — Must be \"Assign Issue\".\n    issue_key           *(required)* — The Jira issue key.\n    assignee_account_id — Account ID. Empty string or -1 to unassign.\n\n================================================================\nCOLLABORATION OPERATIONS\n================================================================\n\n--- Transitions / Workflow ---\n\nGet Transitions — Get available workflow transitions for an issue.\nFields:\n    operations          *(required)* — Must be \"Get Transitions\".\n    issue_key           *(required)* — The Jira issue key.\n\nTransition Issue — Move an issue through a workflow transition.\nFields:\n    operations          *(required)* — Must be \"Transition Issue\".\n    issue_key           *(required)* — The Jira issue key.\n    transition_id       — Numeric transition ID string. Use Get Transitions to find valid values.\n    transition_name     — Transition name. Provide either transition_id or transition_name.\n    comment             — Comment to add during the transition.\n    resolution          — Resolution name.\n    fields              — Dict of additional transition screen fields.\n\n--- Comments ---\n\nAdd Comment — Add a comment to a Jira issue.\nFields:\n    operations          *(required)* — Must be \"Add Comment\".\n    issue_key           *(required)* — The Jira issue key.\n    body                *(required)* — Comment text.\n    visibility_type     — Set to group or role to restrict visibility. Empty for public.\n    visibility_value    — Group or role name when visibility_type is set.\n\nGet Comments — Get all comments on an issue.\nFields:\n    operations          *(required)* — Must be \"Get Comments\".\n    issue_key           *(required)* — The Jira issue key.\n    max_results         — Default 50.\n    start_at            — Pagination offset.\n    order_by            — Use -created for newest first or +created for oldest first.\n\nUpdate Comment — Edit an existing comment.\nFields:\n    operations          *(required)* — Must be \"Update Comment\".\n    issue_key           *(required)* — The Jira issue key.\n    comment_id          *(required)* — Numeric comment ID string.\n    body                *(required)* — New comment text.\n\nDelete Comment — Delete a comment from an issue.\nFields:\n    operations          *(required)* — Must be \"Delete Comment\".\n    issue_key           *(required)* — The Jira issue key.\n    comment_id          *(required)* — Numeric comment ID string. Use Get Comments to find IDs.\n\n--- Worklogs ---\n\nAdd Worklog — Log time on a Jira issue.\nFields:\n    operations          *(required)* — Must be \"Add Worklog\".\n    issue_key           *(required)* — The Jira issue key.\n    time_spent          *(required)* — Jira duration format string.\n    comment             — Description of the work done.\n    started             — ISO 8601 datetime when work started.\n\nGet Worklogs — Get worklog entries for an issue.\nFields:\n    operations          *(required)* — Must be \"Get Worklogs\".\n    issue_key           *(required)* — The Jira issue key.\n    max_results         — Default 50.\n    start_at            — Pagination offset.\n\n--- Watchers ---\n\nGet Watchers — List all watchers of an issue.\nFields:\n    operations          *(required)* — Must be \"Get Watchers\".\n    issue_key           *(required)* — The Jira issue key.\n\nAdd Watcher — Add a user as a watcher.\nFields:\n    operations          *(required)* — Must be \"Add Watcher\".\n    issue_key           *(required)* — The Jira issue key.\n    account_id          *(required)* — Atlassian account ID.\n\nRemove Watcher — Remove a watcher from an issue.\nFields:\n    operations          *(required)* — Must be \"Remove Watcher\".\n    issue_key           *(required)* — The Jira issue key.\n    account_id          *(required)* — Account ID of the watcher to remove.\n\n--- Issue Links ---\n\nLink Issues — Create a link between two issues.\nFields:\n    operations          *(required)* — Must be \"Link Issues\".\n    inward_issue_key    *(required)* — The inward Jira issue key.\n    outward_issue_key   *(required)* — The outward Jira issue key.\n    link_type           — Link type name. Default is Relates.\n    comment             — Optional comment on the link.\n\nGet Link Types — Get all available issue link types.\nFields: none.\n\nDelete Link — Delete an issue link by its ID.\nFields:\n    operations          *(required)* — Must be \"Delete Link\".\n    link_id             *(required)* — Issue link ID string.\n\n--- Votes ---\n\nGet Votes — Get vote count and voters for an issue.\nFields:\n    operations          *(required)* — Must be \"Get Votes\".\n    issue_key           *(required)* — The Jira issue key.\n\nAdd Vote — Cast your vote on an issue.\nFields:\n    operations          *(required)* — Must be \"Add Vote\".\n    issue_key           *(required)* — The Jira issue key.\n\nRemove Vote — Remove your vote from an issue.\nFields:\n    operations          *(required)* — Must be \"Remove Vote\".\n    issue_key           *(required)* — The Jira issue key.\n\n--- Changelog ---\n\nGet Changelog — Get the change history of an issue.\nFields:\n    operations          *(required)* — Must be \"Get Changelog\".\n    issue_key           *(required)* — The Jira issue key.\n    max_results         — Default 50.\n    start_at            — Pagination offset.",
+  "input_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "payload": {
+        "oneOf": [
+          {
+            "description": "Create a new Jira issue or sub-task.\n\nTo create a **Sub-task** you MUST also provide `parent_key`.\nExample: {\"operations\":\"Create Issue\",\"summary\":\"My subtask\",\n          \"issue_type\":\"Sub-task\",\"parent_key\":\"CPT-10\"}\n\nSupported issue types depend on your project configuration.\nUse Get Issue Types to discover valid types for your project.",
+            "properties": {
+              "operations": {
+                "const": "Create Issue",
+                "type": "string"
+              },
+              "summary": {
+                "description": "Issue title / summary (required).",
+                "type": "string"
+              },
+              "issue_type": {
+                "default": "Task",
+                "description": "Issue type name. Common values: \"Task\", \"Bug\", \"Story\", \"Epic\", \"Sub-task\". Type names are project-specific. Use Get Issue Types to list valid types. For Sub-task, parent_key is REQUIRED.",
+                "type": "string"
+              },
+              "description": {
+                "default": "",
+                "description": "Plain-text description of the issue.",
+                "type": "string"
+              },
+              "project_key": {
+                "default": "",
+                "description": "Jira project key, e.g. \"CPT\". Defaults to env JIRA_PROJECT_KEY if not set.",
+                "type": "string"
+              },
+              "assignee_account_id": {
+                "default": "",
+                "description": "Atlassian account ID of the assignee. Use Get User or Find Assignable Users to look up IDs.",
+                "type": "string"
+              },
+              "priority": {
+                "default": "",
+                "description": "Priority name. Standard values: \"Highest\", \"High\", \"Medium\", \"Low\", \"Lowest\".",
+                "type": "string"
+              },
+              "labels": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "List of label strings, e.g. [\"backend\", \"urgent\"]. Labels must already exist or be creatable."
+              },
+              "components": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Component names, e.g. [\"API\", \"Frontend\"]. Components must exist in the project."
+              },
+              "parent_key": {
+                "default": "",
+                "description": "Parent issue key — REQUIRED when issue_type is \"Sub-task\", e.g. \"CPT-10\". In next-gen projects any issue can be a child providing both belong to the same project.",
+                "type": "string"
+              },
+              "custom_fields": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Custom field key-value pairs, e.g. {\"customfield_10014\": \"CPT-5\"}."
+              }
+            },
+            "required": [
+              "operations",
+              "summary"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Get details of a Jira issue.",
+            "properties": {
+              "operations": {
+                "const": "Get Issue",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "fields": {
+                "default": "",
+                "description": "Comma-separated fields. Empty = all. E.g. \"summary,status,assignee\".",
+                "type": "string"
+              },
+              "expand": {
+                "default": "",
+                "description": "Expansions: \"renderedFields,changelog,transitions\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Update fields on an existing Jira issue.",
+            "properties": {
+              "operations": {
+                "const": "Update Issue",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "summary": {
+                "default": "",
+                "description": "New summary / title.",
+                "type": "string"
+              },
+              "description": {
+                "default": "",
+                "description": "New plain-text description.",
+                "type": "string"
+              },
+              "assignee_account_id": {
+                "default": "",
+                "description": "New assignee. Use \"__unassign__\" to remove.",
+                "type": "string"
+              },
+              "priority": {
+                "default": "",
+                "description": "New priority name.",
+                "type": "string"
+              },
+              "labels": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "New labels list (replaces existing)."
+              },
+              "components": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "New component names (replaces existing)."
+              },
+              "custom_fields": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Custom field IDs to values."
+              },
+              "notify_users": {
+                "default": true,
+                "description": "Send email notifications.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Delete a Jira issue.",
+            "properties": {
+              "operations": {
+                "const": "Delete Issue",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "delete_subtasks": {
+                "default": false,
+                "description": "Also delete all sub-tasks.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Search for Jira issues using JQL or filters.",
+            "properties": {
+              "operations": {
+                "const": "Search Issues",
+                "type": "string"
+              },
+              "jql": {
+                "default": "",
+                "description": "Raw JQL string. If provided, other filters are ignored.",
+                "type": "string"
+              },
+              "project_key": {
+                "default": "",
+                "description": "Filter by project key.",
+                "type": "string"
+              },
+              "status": {
+                "default": "",
+                "description": "Filter by status, e.g. \"To Do\", \"In Progress\", \"Done\".",
+                "type": "string"
+              },
+              "assignee": {
+                "default": "",
+                "description": "Filter by assignee. Use \"currentUser()\" for yourself.",
+                "type": "string"
+              },
+              "issue_type": {
+                "default": "",
+                "description": "Filter by issue type, e.g. \"Bug\", \"Task\".",
+                "type": "string"
+              },
+              "priority": {
+                "default": "",
+                "description": "Filter by priority, e.g. \"High\".",
+                "type": "string"
+              },
+              "labels": {
+                "default": "",
+                "description": "Comma-separated labels.",
+                "type": "string"
+              },
+              "text": {
+                "default": "",
+                "description": "Free-text search across summary and description.",
+                "type": "string"
+              },
+              "max_results": {
+                "default": 50,
+                "description": "Max results (max 100).",
+                "type": "integer"
+              },
+              "start_at": {
+                "default": 0,
+                "description": "Pagination offset.",
+                "type": "integer"
+              },
+              "fields": {
+                "default": "summary,status,assignee,priority,issuetype,created,updated",
+                "description": "Fields to return.",
+                "type": "string"
+              },
+              "order_by": {
+                "default": "created DESC",
+                "description": "ORDER BY clause.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Assign or unassign a Jira issue.",
+            "properties": {
+              "operations": {
+                "const": "Assign Issue",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "assignee_account_id": {
+                "default": "",
+                "description": "Account ID. Empty or \"-1\" to unassign.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Get available workflow transitions for an issue.",
+            "properties": {
+              "operations": {
+                "const": "Get Transitions",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Move an issue through a workflow transition.",
+            "properties": {
+              "operations": {
+                "const": "Transition Issue",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "transition_id": {
+                "default": "",
+                "description": "Transition ID (numeric string).",
+                "type": "string"
+              },
+              "transition_name": {
+                "default": "",
+                "description": "Transition name, e.g. \"In Progress\", \"Done\".",
+                "type": "string"
+              },
+              "comment": {
+                "default": "",
+                "description": "Optional comment during transition.",
+                "type": "string"
+              },
+              "resolution": {
+                "default": "",
+                "description": "Resolution name, e.g. \"Done\", \"Won't Do\".",
+                "type": "string"
+              },
+              "fields": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Additional transition fields."
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Add a comment to a Jira issue.",
+            "properties": {
+              "operations": {
+                "const": "Add Comment",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "body": {
+                "description": "Comment body text.",
+                "type": "string"
+              },
+              "visibility_type": {
+                "default": "",
+                "description": "\"group\" or \"role\". Empty for public.",
+                "type": "string"
+              },
+              "visibility_value": {
+                "default": "",
+                "description": "Group/role name for restricted visibility.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key",
+              "body"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Get all comments on a Jira issue.",
+            "properties": {
+              "operations": {
+                "const": "Get Comments",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "max_results": {
+                "default": 50,
+                "description": "Max comments.",
+                "type": "integer"
+              },
+              "start_at": {
+                "default": 0,
+                "description": "Pagination offset.",
+                "type": "integer"
+              },
+              "order_by": {
+                "default": "-created",
+                "description": "\"-created\" (newest) or \"+created\" (oldest).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Update an existing comment.",
+            "properties": {
+              "operations": {
+                "const": "Update Comment",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "comment_id": {
+                "description": "Comment ID to update.",
+                "type": "string"
+              },
+              "body": {
+                "description": "New comment body text.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key",
+              "comment_id",
+              "body"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Delete a comment from a Jira issue.",
+            "properties": {
+              "operations": {
+                "const": "Delete Comment",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "comment_id": {
+                "description": "Comment ID to delete.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key",
+              "comment_id"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Log time on a Jira issue.",
+            "properties": {
+              "operations": {
+                "const": "Add Worklog",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "time_spent": {
+                "description": "Time in Jira format: \"2h\", \"3d\", \"1h 30m\".",
+                "type": "string"
+              },
+              "comment": {
+                "default": "",
+                "description": "Comment about the work done.",
+                "type": "string"
+              },
+              "started": {
+                "default": "",
+                "description": "ISO 8601 start time, e.g. \"2025-01-15T09:00:00.000+0000\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key",
+              "time_spent"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Get worklog entries for an issue.",
+            "properties": {
+              "operations": {
+                "const": "Get Worklogs",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "max_results": {
+                "default": 50,
+                "description": "Max worklogs.",
+                "type": "integer"
+              },
+              "start_at": {
+                "default": 0,
+                "description": "Pagination offset.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Get watchers of an issue.",
+            "properties": {
+              "operations": {
+                "const": "Get Watchers",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Add a watcher to an issue.",
+            "properties": {
+              "operations": {
+                "const": "Add Watcher",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "account_id": {
+                "description": "Atlassian account ID of the watcher.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key",
+              "account_id"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Remove a watcher from an issue.",
+            "properties": {
+              "operations": {
+                "const": "Remove Watcher",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "account_id": {
+                "description": "Account ID of the watcher to remove.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key",
+              "account_id"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Create a link between two issues.",
+            "properties": {
+              "operations": {
+                "const": "Link Issues",
+                "type": "string"
+              },
+              "inward_issue_key": {
+                "description": "Inward issue key, e.g. \"CPT-100\".",
+                "type": "string"
+              },
+              "outward_issue_key": {
+                "description": "Outward issue key, e.g. \"CPT-200\".",
+                "type": "string"
+              },
+              "link_type": {
+                "default": "Relates",
+                "description": "\"Blocks\", \"Cloners\", \"Duplicate\", \"Relates\".",
+                "type": "string"
+              },
+              "comment": {
+                "default": "",
+                "description": "Optional comment.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "inward_issue_key",
+              "outward_issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Get all available issue link types.",
+            "properties": {
+              "operations": {
+                "const": "Get Link Types",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Delete an issue link.",
+            "properties": {
+              "operations": {
+                "const": "Delete Link",
+                "type": "string"
+              },
+              "link_id": {
+                "description": "Issue link ID to delete.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "link_id"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Get vote info for an issue.",
+            "properties": {
+              "operations": {
+                "const": "Get Votes",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Add your vote to an issue.",
+            "properties": {
+              "operations": {
+                "const": "Add Vote",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Remove your vote from an issue.",
+            "properties": {
+              "operations": {
+                "const": "Remove Vote",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Get the change history of an issue.",
+            "properties": {
+              "operations": {
+                "const": "Get Changelog",
+                "type": "string"
+              },
+              "issue_key": {
+                "description": "Issue key, e.g. \"CPT-123\".",
+                "type": "string"
+              },
+              "max_results": {
+                "default": 50,
+                "description": "Max entries.",
+                "type": "integer"
+              },
+              "start_at": {
+                "default": 0,
+                "description": "Pagination offset.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "operations",
+              "issue_key"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "required": [
+      "payload"
+    ],
+    "type": "object"
+  },
+  "meta": {
+    "fastmcp": {
+      "tags": []
+    }
+  }
+}

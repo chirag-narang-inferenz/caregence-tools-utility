@@ -1,0 +1,243 @@
+{
+  "name": "generate_report",
+  "description": "Creates structured business reports with tables, summaries, and actionable insights.",
+  "input_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "config": {
+        "properties": {
+          "format": {
+            "default": "PDF",
+            "description": "Desired output format of the report (defaults to PDF)",
+            "enum": [
+              "PDF",
+              "Excel",
+              "CSV",
+              "DOCX",
+              "HTML"
+            ],
+            "type": "string"
+          },
+          "fileName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "Generated_Report",
+            "description": "Base name of the generated report file"
+          },
+          "dataSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Raw data or storage paths to be processed"
+          },
+          "cloudCredentials": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Injected credentials for cloud storage access"
+          },
+          "fileStorage": {
+            "default": "Local",
+            "description": "Storage destination type (Local, S3, or Blob)",
+            "enum": [
+              "Local",
+              "S3",
+              "Blob"
+            ],
+            "type": "string"
+          },
+          "insightInstructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Custom instructions for generating insights"
+          },
+          "passwordProtection": {
+            "default": false,
+            "description": "Whether to password protect the output file",
+            "type": "boolean"
+          },
+          "passwordPolicy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "DDMM_FNLN",
+                  "MMDD_FNLN",
+                  "DDMM_LNFN",
+                  "MMDD_LNFN",
+                  "DDMM@FNLN",
+                  "MMDD@FNLN",
+                  "DDMM@LNFN",
+                  "MMDD@LNFN",
+                  "DDMM-FNLN",
+                  "MMDD-FNLN",
+                  "DDMM-LNFN",
+                  "MMDD-LNFN"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Dynamic password generation policy to apply"
+          },
+          "passwordContext": {
+            "anyOf": [
+              {
+                "properties": {
+                  "first_name": {
+                    "description": "User's first name for dynamic password",
+                    "type": "string"
+                  },
+                  "last_name": {
+                    "description": "User's last name for dynamic password",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "first_name",
+                  "last_name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "User context (name) for dynamic password generation"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit static password to use if not using a policy"
+          },
+          "workflow_id": {
+            "description": "Identifier of the executing workflow",
+            "type": "string"
+          },
+          "execution_id": {
+            "description": "Identifier of the specific execution session",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "execution_id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "config"
+    ],
+    "type": "object"
+  },
+  "meta": {
+    "display_name": "Generate PDF Report",
+    "icon": "file-text",
+    "category": "AI Services",
+    "connection_name": [
+      {
+        "type": "AWS",
+        "dependency": "AWS",
+        "fields": [
+          "aws_access_key_id",
+          "aws_secret_access_key",
+          "aws_region"
+        ]
+      },
+      {
+        "type": "Azure",
+        "dependency": "Azure",
+        "fields": [
+          "azure_storage_account",
+          "azure_storage_key"
+        ]
+      },
+      {
+        "type": "Azure_OpenAI",
+        "dependency": "",
+        "fields": [
+          "azure_openai_endpoint",
+          "azure_openai_api_key",
+          "azure_openai_deployment",
+          "azure_openai_version"
+        ]
+      }
+    ],
+    "dependencies": {},
+    "fields": {
+      "dataSource": {
+        "type": "browse-file",
+        "description": "Raw data or storage paths to be processed"
+      },
+      "insightInstructions": {
+        "type": "textarea",
+        "description": "Custom instructions for generating insights"
+      }
+    },
+    "hidden_properties": [
+      "workflow_id",
+      "execution_id",
+      "azure_openai_endpoint",
+      "azure_openai_api_key",
+      "azure_openai_deployment",
+      "azure_openai_version"
+    ],
+    "fastmcp": {
+      "tags": []
+    }
+  }
+}

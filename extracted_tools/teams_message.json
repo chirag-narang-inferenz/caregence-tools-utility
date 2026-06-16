@@ -1,0 +1,695 @@
+{
+  "name": "teams_message",
+  "description": "Send messages and create events in Microsoft Teams",
+  "input_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "payload": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "workflow_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique workflow id"
+              },
+              "execution_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique execution id for a workflow"
+              },
+              "user_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique user id for which the workflow is being executed"
+              },
+              "mode": {
+                "const": "Chat",
+                "type": "string"
+              },
+              "team_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams team ID."
+              },
+              "channel_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams channel ID."
+              },
+              "token": {
+                "default": null,
+                "description": "teams access token",
+                "type": "string"
+              },
+              "recipient_email": {
+                "description": "Recipient email address",
+                "format": "email",
+                "type": "string"
+              },
+              "message": {
+                "description": "Message to send",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "recipient_email",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "workflow_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique workflow id"
+              },
+              "execution_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique execution id for a workflow"
+              },
+              "user_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique user id for which the workflow is being executed"
+              },
+              "mode": {
+                "const": "Channel",
+                "type": "string"
+              },
+              "team_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams team ID."
+              },
+              "channel_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams channel ID."
+              },
+              "token": {
+                "default": null,
+                "description": "teams access token",
+                "type": "string"
+              },
+              "message": {
+                "description": "Channel message",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "workflow_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique workflow id"
+              },
+              "execution_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique execution id for a workflow"
+              },
+              "user_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique user id for which the workflow is being executed"
+              },
+              "mode": {
+                "const": "Team Broadcast",
+                "type": "string"
+              },
+              "team_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams team ID."
+              },
+              "channel_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams channel ID."
+              },
+              "token": {
+                "default": null,
+                "description": "teams access token",
+                "type": "string"
+              },
+              "message": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "team_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "recipient_emails": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "format": "email",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "mode",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "workflow_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique workflow id"
+              },
+              "execution_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique execution id for a workflow"
+              },
+              "user_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique user id for which the workflow is being executed"
+              },
+              "mode": {
+                "const": "Channel Broadcast",
+                "type": "string"
+              },
+              "team_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams team ID."
+              },
+              "channel_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams channel ID."
+              },
+              "token": {
+                "default": null,
+                "description": "teams access token",
+                "type": "string"
+              },
+              "message": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "team_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "channel_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "recipient_emails": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "format": "email",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "mode",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "workflow_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique workflow id"
+              },
+              "execution_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique execution id for a workflow"
+              },
+              "user_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams user ID."
+              },
+              "mode": {
+                "enum": [
+                  "Calendar",
+                  "Meeting"
+                ],
+                "type": "string"
+              },
+              "team_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams team ID."
+              },
+              "channel_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Microsoft Teams channel ID."
+              },
+              "token": {
+                "default": null,
+                "description": "teams access token",
+                "type": "string"
+              },
+              "subject": {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "start_time": {
+                "description": "ISO datetime format",
+                "type": "string"
+              },
+              "end_time": {
+                "description": "ISO datetime format",
+                "type": "string"
+              },
+              "attendees": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "description": "Supports both formats:\n\nSimplified:\n{\n    \"email\": \"john@company.com\",\n    \"name\": \"John Doe\"\n}\n\nGraph API:\n{\n    \"emailAddress\": {\n        \"address\": \"john@company.com\",\n        \"name\": \"John Doe\"\n    },\n    \"type\": \"required\"\n}",
+                      "properties": {
+                        "email": {
+                          "format": "email",
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null
+                        },
+                        "attendee_type": {
+                          "default": "required",
+                          "enum": [
+                            "required",
+                            "optional"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "email"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "body": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "location": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "timezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": "UTC"
+              },
+              "isOnlineMeeting": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": true,
+                "description": "Whether the event is an online meeting."
+              },
+              "onlineMeetingProvider": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": "teamsForBusiness",
+                "description": "Provider for online meetings. Default is 'teamsForBusiness' which creates a Microsoft Teams meeting."
+              }
+            },
+            "required": [
+              "mode",
+              "subject",
+              "start_time",
+              "end_time"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "required": [
+      "payload"
+    ],
+    "type": "object"
+  },
+  "meta": {
+    "display_name": "Microsoft Teams",
+    "icon": "PiMicrosoftTeamsLogoLight",
+    "category": "Communication",
+    "connection_name": [
+      {
+        "type": "MS_Teams",
+        "dependency": "",
+        "fields": [
+          "token"
+        ]
+      }
+    ],
+    "dependencies": [
+      {
+        "on_change": [
+          "mode"
+        ],
+        "on_value": "team_id",
+        "action": "get_teams",
+        "dependent_value": "channel"
+      },
+      {
+        "on_change": [
+          "team_id"
+        ],
+        "on_value": "channel_id",
+        "action": "get_channels"
+      }
+    ],
+    "fields": {
+      "message": {
+        "type": "textarea",
+        "description": "Message content to send in Teams chat or channel"
+      },
+      "team_name": {
+        "type": "textarea",
+        "description": "Team Name"
+      },
+      "body": {
+        "type": "html",
+        "description": "Rich HTML body for meeting/calendar invite"
+      },
+      "recipient_email": {
+        "type": "email",
+        "description": "Recipient email address"
+      },
+      "recipient_emails": {
+        "type": "email",
+        "description": "List of recipient email addresses"
+      },
+      "attendees": {
+        "type": "email",
+        "description": "Meeting attendees"
+      },
+      "start_time": {
+        "type": "datetime",
+        "description": "Meeting/calendar start datetime"
+      },
+      "end_time": {
+        "type": "datetime",
+        "description": "Meeting/calendar end datetime"
+      }
+    },
+    "hidden_properties": [
+      "token",
+      "workflow_id",
+      "execution_id",
+      "user_id"
+    ],
+    "fastmcp": {
+      "tags": []
+    }
+  }
+}

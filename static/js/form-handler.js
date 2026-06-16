@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ─── Build field for a single property ─────────────────────────────────────
     function buildField(name, fieldSchema, requiredList, defs, namePrefix = '', fieldMeta = {}) {
         const required = requiredList && requiredList.includes(name);
-        const fullId = namePrefix ? `${namePrefix}_${name}` : name;
+        const fullId = namePrefix ? `${namePrefix}.${name}` : name;
 
         let effectiveSchema = fieldSchema;
         if (fieldSchema.anyOf) {
@@ -316,8 +316,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const metaFields = (window.TOOL_META && window.TOOL_META.fields) || {};
 
         Object.entries(props).forEach(([name, fieldSchema]) => {
-            const fullId = namePrefix ? `${namePrefix}_${name}` : name;
-            const dotId = namePrefix ? `${namePrefix.replace(/_/g, '.')}.${name}` : name;
+            const fullId = namePrefix ? `${namePrefix}.${name}` : name;
+            const dotId = fullId;
 
             let resolved = fieldSchema;
             if (fieldSchema.$ref) {
@@ -357,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (!nestedResolved.discriminator && nestedResolved.oneOf) {
-                nestedResolved.discriminator = { propertyName: "type" };
+                nestedResolved.discriminator = { propertyName: detectDiscriminator(nestedResolved, defs) };
             }
 
             if (nestedResolved.discriminator || nestedResolved.oneOf) {
@@ -368,7 +368,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 nestedTitle.textContent = nestedResolved.title || name;
                 nestedSection.appendChild(nestedTitle);
 
-                buildDiscriminatedUnion(nestedResolved, defs, nestedSection, 1, skipKeys, activeConnections);
+                buildDiscriminatedUnion(nestedResolved, defs, nestedSection, 1, skipKeys, activeConnections, fullId);
+                grid.appendChild(nestedSection);
+                return;
+            }
+
+            if (nestedResolved.properties && (nestedResolved.type === 'object' || !nestedResolved.type)) {
+                const nestedSection = document.createElement('div');
+                nestedSection.className = 'nested-object-section';
+                const nestedTitle = document.createElement('h4');
+                nestedTitle.className = 'section-sub-title';
+                nestedTitle.textContent = nestedResolved.title || name;
+                nestedSection.appendChild(nestedTitle);
+
+                buildObjectFields(nestedResolved, defs, nestedSection, fullId, skipKeys);
                 grid.appendChild(nestedSection);
                 return;
             }
@@ -403,26 +416,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ─── Discriminated Union Renderer ──────────────────────────────────────────
-    function buildDiscriminatedUnion(payloadSchema, defs, container, level = 1, skipFields = [], connections = []) {
+    function buildDiscriminatedUnion(payloadSchema, defs, container, level = 1, skipFields = [], connections = [], namePrefix = '') {
         const discriminator = payloadSchema.discriminator;
-        if (!discriminator) return false;
+        if (!discriminator) {
+            console.warn("[MCP Form] buildDiscriminatedUnion: no discriminator defined");
+            return false;
+        }
 
         const propName = discriminator.propertyName;
+        const fullId = namePrefix ? `${namePrefix}.${propName}` : propName;
         let mapping = discriminator.mapping || {};
+
+        console.log("[MCP Form] buildDiscriminatedUnion for:", fullId, "propName:", propName);
 
         if ((!mapping || Object.keys(mapping).length === 0) && payloadSchema.oneOf) {
             mapping = {};
-            payloadSchema.oneOf.forEach(schema => {
+            payloadSchema.oneOf.forEach((schema, idx) => {
                 let resolvedSchema = schema;
                 if (schema.$ref) {
                     resolvedSchema = resolveDef(schema.$ref, defs) || schema;
                 }
                 const discField = resolvedSchema.properties?.[propName];
+                console.log(`[MCP Form] sub-schema index ${idx} properties:`, resolvedSchema.properties, "discField:", discField);
                 if (!discField) return;
 
-                let discValue = discField.const !== undefined ? discField.const : (discField.enum && discField.enum[0]);
-                if (discValue) {
-                    mapping[discValue] = schema;
+                if (discField.const !== undefined && discField.const !== null) {
+                    mapping[discField.const] = schema;
+                } else if (discField.enum && Array.isArray(discField.enum)) {
+                    discField.enum.forEach(val => {
+                        if (val !== undefined && val !== null) {
+                            mapping[val] = schema;
+                        }
+                    });
                 }
             });
         }
@@ -439,7 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const sel = document.createElement('select');
         sel.id = `disc_${propName}_${level}`;
-        sel.name = propName;
+        sel.name = fullId;
         sel.innerHTML = `<option value="">Choose ${propName}...</option>`;
         options.forEach(opt => {
             const o = document.createElement('option');
@@ -469,7 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!def) return;
 
             if (def.discriminator || def.oneOf) {
-                buildDiscriminatedUnion(def, defs, nested, level + 1, skipFields, connections);
+                buildDiscriminatedUnion(def, defs, nested, level + 1, skipFields, connections, namePrefix);
             } else {
                 const section = document.createElement('div');
                 section.className = 'op-fields-section';
@@ -478,21 +503,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 title.textContent = def.title || chosen;
                 section.appendChild(title);
 
-                const subSchemaFields = Object.keys(def.properties || {});
-                console.log("chosen:", chosen);
-                console.log("schema title:", def.title);
-
                 connections.forEach(c => {
-
-                    let shouldInclude =
-                        c.dependency &&
-                        slugify(c.dependency) === slugify(chosen);
-
-                    if (shouldInclude && c.sub_dependency) {
-                        shouldInclude =
-                            slugify(c.sub_dependency) ===
-                            slugify(def.title || chosen);
-                    }
+                    const shouldInclude = connectionMatchesSchemaContext(c, chosen, def, namePrefix);
 
                     if (shouldInclude) {
                         const connName =
@@ -505,15 +517,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         );
                     }
                 });
-                // connections.forEach(c => {
-                //     const shouldInclude = c.dependency && slugify(c.dependency) === slugify(chosen);
-                //     if (shouldInclude) {
-                //         const connName = connections.length > 1 ? `connection_name_${(c.type || 'service').toLowerCase()}` : 'connection_name';
-                //         section.appendChild(makeConnectionDropdown(c, connName));
-                //     }
-                // });
 
-                buildObjectFields(def, defs, section, '', mergedSkip);
+                buildObjectFields(def, defs, section, namePrefix, mergedSkip);
                 nested.appendChild(section);
                 sweepSkipFields(nested, skipFields);
             }
@@ -604,14 +609,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (!resolved.discriminator && resolved.oneOf) {
-                resolved.discriminator = { propertyName: "type" };
+                resolved.discriminator = { propertyName: detectDiscriminator(resolved, defs) };
             }
 
             if (resolved.discriminator || (resolved.oneOf && resolved.discriminator)) {
                 const section = document.createElement('div');
                 section.className = 'schema-section';
                 root.appendChild(section);
-                buildDiscriminatedUnion(resolved, defs, section, 1, skipFields, connections);
+                buildDiscriminatedUnion(resolved, defs, section, 1, skipFields, connections, propName);
                 return;
             }
 
@@ -622,7 +627,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 h3.className = 'section-title';
                 h3.textContent = resolved.title || propName;
                 section.appendChild(h3);
-                buildObjectFields(resolved, defs, section, '', skipFields);
+                buildObjectFields(resolved, defs, section, propName, skipFields);
                 root.appendChild(section);
                 return;
             }
@@ -645,13 +650,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const formData = new FormData(toolForm);
-        const flat = {};
+        const nested = {};
         formData.forEach((value, key) => {
+            if (!key) return;
             let parsed = value;
-            try { parsed = JSON.parse(value); } catch (_) { }
-            flat[key] = parsed;
+            
+            if (value instanceof File) {
+                if (!value.name) return;
+                parsed = value.name;
+            } else {
+                try { parsed = JSON.parse(value); } catch (_) { }
+            }
+
+            const parts = key.split('.');
+            let current = nested;
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                if (i === parts.length - 1) {
+                    if (key.endsWith('attachments') || key.endsWith('files')) {
+                        current[part] = current[part] || [];
+                        current[part].push(parsed);
+                    } else {
+                        current[part] = parsed;
+                    }
+                } else {
+                    if (!current[part]) {
+                        current[part] = {};
+                    }
+                    current = current[part];
+                }
+            }
         });
-        return flat;
+        return nested;
     }
 
     // ─── Form submit ────────────────────────────────────────────────────────────
@@ -738,7 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
 
-                    const triggerKey = targetName.split('_').pop();
+                    const triggerKey = targetName.includes('.') ? targetName.split('.').pop() : targetName.split('_').pop();
                     const payload = {
                         connection_id: connection_id,
                         action: action,
@@ -748,7 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
 
                     try {
-                        const response = await fetch('https://dev-api.caregence.ai/api/connection-actions/execute', {
+                        const response = await fetch('/api/connection-actions/execute', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)

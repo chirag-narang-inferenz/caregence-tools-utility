@@ -1,0 +1,441 @@
+{
+  "name": "fill_pdf_from_file",
+  "description": "Automatically fills out a PDF form using data from a file.",
+  "input_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "input_data": {
+        "properties": {
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique workflow id"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique execution id for a workflow"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique user id for which the workflow is being executed"
+          },
+          "source": {
+            "description": "Configuration for the source PDF template. This includes the storage type and path where the template is located.",
+            "oneOf": [
+              {
+                "properties": {
+                  "type": {
+                    "const": "AWS",
+                    "description": "Defines the storage provider type as AWS.",
+                    "type": "string"
+                  },
+                  "bucket": {
+                    "description": "Name of the AWS S3 bucket where the file is stored.",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "Path/key of the file inside the S3 bucket.",
+                    "type": "string"
+                  },
+                  "AWS_ACCESS_KEY_ID": {
+                    "description": "AWS access key ID used for authentication.",
+                    "type": "string"
+                  },
+                  "AWS_SECRET_ACCESS_KEY": {
+                    "description": "AWS secret access key used for authentication.",
+                    "type": "string"
+                  },
+                  "AWS_REGION": {
+                    "description": "AWS region where the S3 bucket is hosted.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "bucket",
+                  "key",
+                  "AWS_ACCESS_KEY_ID",
+                  "AWS_SECRET_ACCESS_KEY",
+                  "AWS_REGION"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "type": {
+                    "const": "Azure",
+                    "description": "Defines the storage provider type as Azure.",
+                    "type": "string"
+                  },
+                  "container": {
+                    "description": "Name of the Azure Blob Storage container.",
+                    "type": "string"
+                  },
+                  "blob": {
+                    "description": "Path/name of the blob inside the Azure container.",
+                    "type": "string"
+                  },
+                  "AZURE_STORAGE_ACCOUNT": {
+                    "description": "Azure storage account name.",
+                    "type": "string"
+                  },
+                  "AZURE_STORAGE_KEY": {
+                    "description": "Azure storage account access key.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "container",
+                  "blob",
+                  "AZURE_STORAGE_ACCOUNT",
+                  "AZURE_STORAGE_KEY"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "type": {
+                    "const": "Local",
+                    "description": "Defines the storage provider type as Local.",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute or relative path of the local file.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "path"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "llm_credentials": {
+            "description": "Credentials for authenticating with the language model service used for processing instructions and generating responses",
+            "oneOf": [
+              {
+                "properties": {
+                  "model_type": {
+                    "const": "Azure",
+                    "default": "Azure",
+                    "type": "string"
+                  },
+                  "azure_openai_endpoint": {
+                    "description": "Endpoint URL for Azure OpenAI service.",
+                    "type": "string"
+                  },
+                  "azure_openai_api_key": {
+                    "description": "API key for Azure OpenAI service.",
+                    "type": "string"
+                  },
+                  "azure_openai_deployment": {
+                    "description": "Deployment name for Azure OpenAI service.",
+                    "type": "string"
+                  },
+                  "azure_openai_api_version": {
+                    "description": "API version for Azure OpenAI service.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "azure_openai_endpoint",
+                  "azure_openai_api_key",
+                  "azure_openai_deployment",
+                  "azure_openai_api_version"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "model_type": {
+                    "const": "AWS",
+                    "default": "AWS",
+                    "type": "string"
+                  },
+                  "aws_access_key_id": {
+                    "description": "AWS access key ID",
+                    "type": "string"
+                  },
+                  "aws_secret_access_key": {
+                    "description": "AWS secret access key",
+                    "type": "string"
+                  },
+                  "aws_region": {
+                    "description": "AWS region (e.g., us-west-2)",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "aws_access_key_id",
+                  "aws_secret_access_key",
+                  "aws_region"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "json_data": {
+            "description": "A JSON string containing the key-value pairs used to populate the PDF form fields. The keys should correspond to the names of the fields in the PDF template, and the values are the data to be inserted. Example: '{\"full_name\": \"John Doe\", \"dob\": \"01/01/2000\"}'.",
+            "type": "string"
+          },
+          "destination": {
+            "description": "Configuration for the destination where the filled PDF will be stored. This includes the storage type and path.",
+            "oneOf": [
+              {
+                "properties": {
+                  "type": {
+                    "const": "AWS",
+                    "description": "Defines the storage provider type as AWS.",
+                    "type": "string"
+                  },
+                  "bucket": {
+                    "description": "Name of the AWS S3 bucket where the file is stored.",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "Path/key of the file inside the S3 bucket.",
+                    "type": "string"
+                  },
+                  "AWS_ACCESS_KEY_ID": {
+                    "description": "AWS access key ID used for authentication.",
+                    "type": "string"
+                  },
+                  "AWS_SECRET_ACCESS_KEY": {
+                    "description": "AWS secret access key used for authentication.",
+                    "type": "string"
+                  },
+                  "AWS_REGION": {
+                    "description": "AWS region where the S3 bucket is hosted.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "bucket",
+                  "key",
+                  "AWS_ACCESS_KEY_ID",
+                  "AWS_SECRET_ACCESS_KEY",
+                  "AWS_REGION"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "type": {
+                    "const": "Azure",
+                    "description": "Defines the storage provider type as Azure.",
+                    "type": "string"
+                  },
+                  "container": {
+                    "description": "Name of the Azure Blob Storage container.",
+                    "type": "string"
+                  },
+                  "blob": {
+                    "description": "Path/name of the blob inside the Azure container.",
+                    "type": "string"
+                  },
+                  "AZURE_STORAGE_ACCOUNT": {
+                    "description": "Azure storage account name.",
+                    "type": "string"
+                  },
+                  "AZURE_STORAGE_KEY": {
+                    "description": "Azure storage account access key.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "container",
+                  "blob",
+                  "AZURE_STORAGE_ACCOUNT",
+                  "AZURE_STORAGE_KEY"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "text_extraction_config": {
+            "description": "Configuration for the text extraction service used to extract text from the PDF.",
+            "oneOf": [
+              {
+                "properties": {
+                  "type": {
+                    "const": "AzureDocumentIntelligence",
+                    "description": "Defines the text extraction service type as Azure Document Intelligence.",
+                    "type": "string"
+                  },
+                  "AZURE_DOCUMENT_ENDPOINT": {
+                    "description": "Endpoint URL for Azure Document Intelligence service.",
+                    "type": "string"
+                  },
+                  "AZURE_DOCUMENT_KEY": {
+                    "description": "API key for Azure Document Intelligence service.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "AZURE_DOCUMENT_ENDPOINT",
+                  "AZURE_DOCUMENT_KEY"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "type": {
+                    "const": "AWSTextract",
+                    "description": "Defines the text extraction service type as AWS Textract.",
+                    "type": "string"
+                  },
+                  "AWS_ACCESS_KEY_ID": {
+                    "description": "AWS access key ID used for authentication with AWS Textract.",
+                    "type": "string"
+                  },
+                  "AWS_SECRET_ACCESS_KEY": {
+                    "description": "AWS secret access key used for authentication with AWS Textract.",
+                    "type": "string"
+                  },
+                  "AWS_REGION": {
+                    "description": "AWS region where the Textract service is hosted.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "AWS_ACCESS_KEY_ID",
+                  "AWS_SECRET_ACCESS_KEY",
+                  "AWS_REGION"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "required": [
+          "source",
+          "llm_credentials",
+          "json_data",
+          "destination",
+          "text_extraction_config"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "input_data"
+    ],
+    "type": "object"
+  },
+  "meta": {
+    "display_name": "Auto-Fill PDF Document",
+    "icon": "BsFiletypePdf",
+    "category": "Fill PDF",
+    "connection_name": [
+      {
+        "type": "AWS_S3_Cloud",
+        "dependency": "AWS",
+        "sub_dependency": "AWSConfig",
+        "fields": [
+          "bucket",
+          "key",
+          "AWS_ACCESS_KEY_ID",
+          "AWS_SECRET_ACCESS_KEY",
+          "AWS_REGION"
+        ]
+      },
+      {
+        "type": "Azure_Storage",
+        "dependency": "Azure",
+        "sub_dependency": "AzureConfig",
+        "fields": [
+          "container",
+          "blob",
+          "AZURE_STORAGE_ACCOUNT",
+          "AZURE_STORAGE_KEY"
+        ]
+      },
+      {
+        "type": "Local",
+        "dependency": "Local",
+        "fields": [
+          "path"
+        ]
+      },
+      {
+        "type": "Azure_Document_Intelligence",
+        "dependency": "AzureDocumentIntelligence",
+        "sub_dependency": "AzureConfig",
+        "fields": [
+          "AZURE_DOCUMENT_ENDPOINT",
+          "AZURE_DOCUMENT_KEY"
+        ]
+      },
+      {
+        "type": "AWSTextract",
+        "dependency": "AWSTextract",
+        "sub_dependency": "AWSConfig",
+        "fields": [
+          "AWS_ACCESS_KEY_ID",
+          "AWS_SECRET_ACCESS_KEY",
+          "AWS_REGION"
+        ]
+      },
+      {
+        "type": "Azure_OpenAI",
+        "dependency": "Azure",
+        "sub_dependency": "AzureOpenAICredentials",
+        "fields": [
+          "azure_openai_endpoint",
+          "azure_openai_api_key",
+          "azure_openai_api_version",
+          "azure_openai_deployment"
+        ]
+      },
+      {
+        "type": "AWS_Bedrock",
+        "dependency": "AWS",
+        "sub_dependency": "BedrockCredentials",
+        "fields": [
+          "aws_access_key_id",
+          "aws_secret_access_key",
+          "aws_region"
+        ]
+      }
+    ],
+    "dependencies": {},
+    "hidden_properties": [
+      "execution_id",
+      "workflow_id",
+      "user_id"
+    ],
+    "fastmcp": {
+      "tags": []
+    }
+  }
+}

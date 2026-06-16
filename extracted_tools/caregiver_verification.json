@@ -1,0 +1,161 @@
+{
+  "name": "caregiver_verification",
+  "description": "Automates caregiver credential verification using AI-powered web validation.",
+  "input_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "payload": {
+        "description": "Request model for running planner tool",
+        "properties": {
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique workflow id"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique execution id for a workflow"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique user id for which the workflow is being executed"
+          },
+          "caregiver_type": {
+            "enum": [
+              "Nursing",
+              "Social Worker",
+              "Occupational therapist",
+              "Physical therapist"
+            ],
+            "type": "string"
+          },
+          "website": {
+            "description": "website link",
+            "type": "string"
+          },
+          "license_number": {
+            "description": "licence number of the caregiver",
+            "type": "string"
+          },
+          "license_type": {
+            "description": "Type of license for the caregiver",
+            "enum": [
+              "RN",
+              "6 month APRN Permit",
+              "APRN-CNM",
+              "APRN-CNP",
+              "APRN-CNS",
+              "APRN-CRNA",
+              "LVN/LPN",
+              "Refresher Permit"
+            ],
+            "type": "string"
+          },
+          "openai_config": {
+            "properties": {
+              "azure_openai_endpoint": {
+                "description": "Azure OpenAI endpoint URL",
+                "type": "string"
+              },
+              "azure_openai_api_key": {
+                "description": "Azure OpenAI API key",
+                "type": "string"
+              },
+              "azure_openai_deployment": {
+                "description": "Azure OpenAI deployment name to use",
+                "type": "string"
+              },
+              "azure_openai_api_version": {
+                "description": "Azure OpenAI API version to use",
+                "type": "string"
+              }
+            },
+            "required": [
+              "azure_openai_endpoint",
+              "azure_openai_api_key",
+              "azure_openai_deployment",
+              "azure_openai_api_version"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "caregiver_type",
+          "website",
+          "license_number",
+          "license_type",
+          "openai_config"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "payload"
+    ],
+    "type": "object"
+  },
+  "meta": {
+    "display_name": "Caregiver Verification",
+    "icon": "FiUserCheck",
+    "category": "Prior Authorization",
+    "connection_name": [
+      {
+        "type": "Azure_OpenAI",
+        "dependency": "",
+        "fields": [
+          "azure_openai_api_version",
+          "azure_openai_api_key",
+          "azure_openai_endpoint",
+          "azure_openai_deployment"
+        ]
+      }
+    ],
+    "dependencies": {},
+    "fields": {
+      "caregiver_type": {
+        "type": "dropdown",
+        "description": "caregiver type, e.g. Nursing, Social Worker, Occupational therapist, Physical therapist"
+      },
+      "website": {
+        "type": "textarea",
+        "description": "website link"
+      },
+      "licence_type": {
+        "type": "dropdown",
+        "description": "Type of license for the caregiver, e.g. RN, 6 month APRN Permit, APRN-CNM, APRN-CNP, APRN-CNS, APRN-CRNA, LVN/LPN, Refresher Permit"
+      }
+    },
+    "hidden_properties": [
+      "workflow_id",
+      "execution_id",
+      "user_id",
+      "openai_config"
+    ],
+    "fastmcp": {
+      "tags": []
+    }
+  }
+}

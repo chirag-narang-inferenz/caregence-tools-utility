@@ -2,10 +2,31 @@
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from mcp.client.sse import sse_client
+try:
+    from mcp.client.streamable_http import streamablehttp_client
+except ImportError:
+    streamablehttp_client = None
 from mcp import ClientSession
 import json
 import asyncio
 import requests
+import httpx
+
+# Monkey-patch httpx to bypass SSL verification globally for self-signed certificates
+try:
+    original_async_init = httpx.AsyncClient.__init__
+    def patched_async_init(self, *args, **kwargs):
+        kwargs['verify'] = False
+        original_async_init(self, *args, **kwargs)
+    httpx.AsyncClient.__init__ = patched_async_init
+    
+    original_sync_init = httpx.Client.__init__
+    def patched_sync_init(self, *args, **kwargs):
+        kwargs['verify'] = False
+        original_sync_init(self, *args, **kwargs)
+    httpx.Client.__init__ = patched_sync_init
+except Exception as patch_e:
+    print(f"[Caregence] Failed to patch httpx SSL verification: {patch_e}")
 
 app = Flask(__name__)
 CORS(app)
@@ -14,8 +35,13 @@ CORS(app)
 DYNAMIC_TOOLS = []
 CURRENT_SSE_URL = "http://192.168.8.191:9090/sse"
 CAREGENCE_CONNECTIONS = []
+CACHED_TOKEN = None
 
-def get_caregence_token():
+def get_caregence_token(force_refresh=False):
+    global CACHED_TOKEN
+    if CACHED_TOKEN and not force_refresh:
+        return CACHED_TOKEN
+
     login_url = "https://dev-api.caregence.ai/users/login"
     login_payload = {
         "email": "administrator@caregence.ai",
@@ -34,6 +60,7 @@ def get_caregence_token():
     if not access_token:
         raise Exception("No access token returned in login response.")
     
+    CACHED_TOKEN = access_token
     return access_token
 
 def fetch_caregence_connections():
@@ -47,6 +74,14 @@ def fetch_caregence_connections():
         }
         print("[Caregence] Fetching connections...")
         conns_res = requests.get(conns_url, headers=headers)
+        
+        # If token expired or is invalid (400, 401, 422), refresh token and retry once
+        if conns_res.status_code in [400, 401, 422]:
+            print(f"[Caregence] Fetching connections failed with {conns_res.status_code}. Retrying with fresh login...")
+            access_token = get_caregence_token(force_refresh=True)
+            headers["Authorization"] = f"Bearer {access_token}"
+            conns_res = requests.get(conns_url, headers=headers)
+
         conns_res.raise_for_status()
         
         conns_data = conns_res.json()
@@ -77,6 +112,13 @@ def proxy_connection_actions():
         print(f"[Caregence Action] Sending POST to {url} ...")
         res = requests.post(url, headers=headers, json=request.json)
         
+        # If token expired or is invalid (400, 401, 422), refresh token and retry once
+        if res.status_code in [400, 401, 422]:
+            print(f"[Caregence Action] Request failed with {res.status_code}. Retrying with fresh login...")
+            access_token = get_caregence_token(force_refresh=True)
+            headers["Authorization"] = f"Bearer {access_token}"
+            res = requests.post(url, headers=headers, json=request.json)
+
         print(f"[Caregence Action] Response Status: {res.status_code}")
         try:
             res_json = res.json()
@@ -94,32 +136,109 @@ def proxy_connection_actions():
 
 
 async def fetch_tools_via_mcp(sse_url: str):
-    """Use the official MCP Python client to connect and list tools."""
+    """Use the official MCP Python client to connect and list tools, trying candidate URL paths, protocols, and bypassing SSL verification."""
+    global CURRENT_SSE_URL
+    initial_urls = [sse_url]
+    if sse_url.startswith('https://'):
+        alt_scheme = 'http://' + sse_url[8:]
+        if alt_scheme not in initial_urls:
+            initial_urls.append(alt_scheme)
+    elif sse_url.startswith('http://'):
+        alt_scheme = 'https://' + sse_url[7:]
+        if alt_scheme not in initial_urls:
+            initial_urls.append(alt_scheme)
 
+    candidates = []
+    for u in initial_urls:
+        if u not in candidates:
+            candidates.append(u)
+        base_url = u.rstrip('/')
+        if base_url.endswith('/sse'):
+            candidates.append(base_url[:-4] + '/mcp')
+            candidates.append(base_url[:-4] + '/mcp/sse')
+        elif base_url.endswith('/mcp'):
+            candidates.append(base_url + '/sse')
+            candidates.append(base_url[:-4] + '/sse')
+        else:
+            candidates.append(f"{base_url}/mcp")
+            candidates.append(f"{base_url}/sse")
+            candidates.append(f"{base_url}/mcp/sse")
 
-    print(f"[MCP] Connecting to: {sse_url}")
-    async with sse_client(sse_url) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            print("[MCP] Session initialized, listing tools...")
-            result = await session.list_tools()
-            tools = result.tools
-            print(f"[MCP] Found {len(tools)} tools")
-            # Convert MCP Tool objects to plain dicts for storage/JSON
-            tools_list = []
-            for t in tools:
-                print('============================')
-                print(t.meta)
-                print('============================')
+    # Clean duplicates while preserving order
+    unique_candidates = []
+    for c in candidates:
+        if c not in unique_candidates:
+            unique_candidates.append(c)
+    candidates = unique_candidates
 
-                tool_dict = {
-                    "name": t.name,
-                    "description": t.description or "",
-                    "input_schema": t.inputSchema if isinstance(t.inputSchema, dict) else (t.inputSchema.model_dump() if hasattr(t.inputSchema, 'model_dump') else {}),
-                    "meta": t.meta
-                }
-                tools_list.append(tool_dict)
-            return tools_list
+    last_error = None
+    for url in candidates:
+        print(f"[MCP] Connecting to candidate URL: {url}")
+        
+        # 1. Try standard sse_client first
+        try:
+            print(f"[MCP] Trying sse_client for {url} ...")
+            async with sse_client(url) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    print(f"[MCP] sse_client session initialized successfully with: {url}")
+                    result = await session.list_tools()
+                    tools = result.tools
+                    print(f"[MCP] Found {len(tools)} tools via sse_client")
+                    
+                    tools_list = []
+                    for t in tools:
+                        tool_dict = {
+                            "name": t.name,
+                            "description": t.description or "",
+                            "input_schema": t.inputSchema if isinstance(t.inputSchema, dict) else (t.inputSchema.model_dump() if hasattr(t.inputSchema, 'model_dump') else {}),
+                            "meta": t.meta
+                        }
+                        tools_list.append(tool_dict)
+                    
+                    CURRENT_SSE_URL = url
+                    return tools_list
+        except Exception as e:
+            print(f"[MCP] sse_client failed for {url}: {e}")
+            if hasattr(e, 'exceptions'):
+                for idx, sub_e in enumerate(e.exceptions):
+                    print(f"  [MCP] sse_client sub-exception {idx}: {sub_e}")
+            last_error = e
+
+        # 2. Try streamablehttp_client if sse_client fails
+        if streamablehttp_client is not None:
+            try:
+                print(f"[MCP] Trying streamablehttp_client for {url} ...")
+                async with streamablehttp_client(url) as (read, write, _):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        print(f"[MCP] streamablehttp_client session initialized successfully with: {url}")
+                        result = await session.list_tools()
+                        tools = result.tools
+                        print(f"[MCP] Found {len(tools)} tools via streamablehttp_client")
+                        
+                        tools_list = []
+                        for t in tools:
+                            tool_dict = {
+                                "name": t.name,
+                                "description": t.description or "",
+                                "input_schema": t.inputSchema if isinstance(t.inputSchema, dict) else (t.inputSchema.model_dump() if hasattr(t.inputSchema, 'model_dump') else {}),
+                                "meta": t.meta
+                            }
+                            tools_list.append(tool_dict)
+                        
+                        CURRENT_SSE_URL = url
+                        return tools_list
+            except Exception as e:
+                print(f"[MCP] streamablehttp_client failed for {url}: {e}")
+                if hasattr(e, 'exceptions'):
+                    for idx, sub_e in enumerate(e.exceptions):
+                        print(f"  [MCP] streamablehttp_client sub-exception {idx}: {sub_e}")
+                last_error = e
+
+    if last_error:
+        raise last_error
+    raise Exception("Failed to connect to any candidate URL")
 
 
 @app.route('/fetch-tools', methods=['POST'])
@@ -133,7 +252,6 @@ def fetch_tools_from_sse():
         # Run the async MCP client in a synchronous Flask context
         tools_list = asyncio.run(fetch_tools_via_mcp(sse_url))
         DYNAMIC_TOOLS = tools_list
-        CURRENT_SSE_URL = sse_url
         return jsonify({"status": "success", "tools": tools_list, "count": len(tools_list)})
     except Exception as e:
         import traceback

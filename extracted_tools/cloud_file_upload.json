@@ -1,0 +1,281 @@
+{
+  "name": "cloud_file_upload",
+  "description": "Upload one or more staged files to AWS S3 or Azure Blob Storage.",
+  "input_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "payload": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "workflow_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique workflow id"
+              },
+              "execution_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique execution id for a workflow"
+              },
+              "user_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique user id for which the workflow is being executed"
+              },
+              "platform": {
+                "const": "AWS",
+                "default": "AWS",
+                "type": "string"
+              },
+              "source_files": {
+                "description": "List of staged file paths on the server to upload",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "destination_container": {
+                "description": "Target S3 bucket or Azure Blob container name",
+                "type": "string"
+              },
+              "destination_folder": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Optional sub-folder or prefix inside the destination container"
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Optional MIME type override applied to all uploaded files"
+              },
+              "aws_access_key_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "AWS access key id for S3 upload"
+              },
+              "aws_secret_access_key": {
+                "anyOf": [
+                  {
+                    "format": "password",
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "AWS secret access key for S3 upload"
+              },
+              "region_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "AWS region for the destination S3 bucket"
+              }
+            },
+            "required": [
+              "source_files",
+              "destination_container"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "workflow_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique workflow id"
+              },
+              "execution_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique execution id for a workflow"
+              },
+              "user_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "unique user id for which the workflow is being executed"
+              },
+              "platform": {
+                "const": "Azure",
+                "default": "Azure",
+                "type": "string"
+              },
+              "source_files": {
+                "description": "List of staged file paths on the server to upload",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "destination_container": {
+                "description": "Target S3 bucket or Azure Blob container name",
+                "type": "string"
+              },
+              "destination_folder": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Optional sub-folder or prefix inside the destination container"
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Optional MIME type override applied to all uploaded files"
+              },
+              "azure_storage_connection_string": {
+                "anyOf": [
+                  {
+                    "format": "password",
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Azure storage account connection string for Blob upload"
+              }
+            },
+            "required": [
+              "source_files",
+              "destination_container"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "required": [
+      "payload"
+    ],
+    "type": "object"
+  },
+  "meta": {
+    "display_name": "Cloud File Upload",
+    "icon": "IoCloudUploadOutline",
+    "category": "Cloud Storage",
+    "connection_name": [
+      {
+        "type": "AWS_S3_Cloud",
+        "dependency": "AWS",
+        "fields": [
+          "aws_access_key_id",
+          "aws_secret_access_key",
+          "region_name"
+        ]
+      },
+      {
+        "type": "Azure_Blob_Cloud",
+        "dependency": "Azure",
+        "fields": [
+          "azure_storage_connection_string"
+        ]
+      }
+    ],
+    "dependencies": {},
+    "fields": {
+      "source_files": {
+        "type": "file",
+        "description": "Files to upload"
+      }
+    },
+    "hidden_properties": [
+      "workflow_id",
+      "execution_id",
+      "user_id"
+    ],
+    "fastmcp": {
+      "tags": []
+    }
+  }
+}

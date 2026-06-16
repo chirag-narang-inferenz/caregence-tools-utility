@@ -1,0 +1,254 @@
+{
+  "name": "send_email",
+  "description": "Sends email messages to one or more recipients.",
+  "input_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "payload": {
+        "properties": {
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique workflow id"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique execution id for a workflow"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique user id for which the workflow is being executed"
+          },
+          "openai_config": {
+            "properties": {
+              "azure_openai_endpoint": {
+                "description": "Azure OpenAI endpoint URL",
+                "type": "string"
+              },
+              "azure_openai_api_key": {
+                "description": "Azure OpenAI API key",
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              "azure_openai_deployment": {
+                "description": "Azure OpenAI deployment name to use",
+                "type": "string"
+              },
+              "azure_openai_api_version": {
+                "description": "Azure OpenAI API version to use",
+                "type": "string"
+              }
+            },
+            "required": [
+              "azure_openai_endpoint",
+              "azure_openai_api_key",
+              "azure_openai_deployment",
+              "azure_openai_api_version"
+            ],
+            "type": "object"
+          },
+          "operations": {
+            "description": "Cloud provider for sending email, either 'AWS' or 'Azure'",
+            "oneOf": [
+              {
+                "properties": {
+                  "operations": {
+                    "const": "Azure",
+                    "default": "Azure",
+                    "type": "string"
+                  },
+                  "connection_string": {
+                    "description": "ACS connection string",
+                    "format": "password",
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "acs_sender": {
+                    "description": "ACS sender email address",
+                    "format": "email",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "connection_string",
+                  "acs_sender"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "operations": {
+                    "const": "AWS",
+                    "default": "AWS",
+                    "type": "string"
+                  },
+                  "access_key": {
+                    "description": "AWS access key",
+                    "format": "password",
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "secret_key": {
+                    "description": "AWS secret key",
+                    "format": "password",
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "region": {
+                    "description": "AWS region (e.g., ap-south-1)",
+                    "type": "string"
+                  },
+                  "aws_sender": {
+                    "description": "AWS sender email address",
+                    "format": "email",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "access_key",
+                  "secret_key",
+                  "region",
+                  "aws_sender"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "to_email": {
+            "description": "Primary recipient email addresses",
+            "items": {
+              "format": "email",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "subject": {
+            "description": "Email subject line",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "body_text": {
+            "description": "Plain text content of the email, combine it with the previous tool's output if provided.",
+            "type": "string"
+          },
+          "cc_email": {
+            "description": "Carbon copy recipient email addresses",
+            "items": {
+              "format": "email",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "bcc_email": {
+            "description": "Blind carbon copy recipient email addresses",
+            "items": {
+              "format": "email",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "attachments": {
+            "description": "List of file system paths to attach. Example: '/tmp/report.pdf' or 'C:\\Users\\user\\file.pdf'.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "openai_config",
+          "operations",
+          "to_email",
+          "subject",
+          "body_text"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "payload"
+    ],
+    "type": "object"
+  },
+  "meta": {
+    "display_name": "Send Email",
+    "icon": "IoMailOutline",
+    "category": "Communication",
+    "connection_name": [
+      {
+        "type": "Azure_Email",
+        "dependency": "Azure",
+        "fields": [
+          "connection_string",
+          "acs_sender"
+        ]
+      },
+      {
+        "type": "AWS_Email",
+        "dependency": "AWS",
+        "fields": [
+          "access_key",
+          "secret_key",
+          "region",
+          "aws_sender"
+        ]
+      },
+      {
+        "type": "Azure_OpenAI",
+        "dependency": "",
+        "fields": [
+          "azure_openai_endpoint",
+          "azure_openai_api_key",
+          "azure_openai_deployment",
+          "azure_openai_version"
+        ]
+      }
+    ],
+    "dependencies": {},
+    "fields": {
+      "body_text": {
+        "type": "textarea",
+        "description": "Email content"
+      },
+      "attachments": {
+        "type": "file",
+        "description": "File attachments"
+      }
+    },
+    "hidden_properties": [
+      "workflow_id",
+      "execution_id",
+      "user_id",
+      "openai_config"
+    ],
+    "fastmcp": {
+      "tags": []
+    }
+  }
+}

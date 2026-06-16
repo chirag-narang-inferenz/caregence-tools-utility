@@ -1,0 +1,121 @@
+{
+  "name": "web_search",
+  "description": "Search the web and retrieve up-to-date information from online sources.",
+  "input_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "payload": {
+        "description": "Input payload for the web_search MCP tool.",
+        "properties": {
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique workflow id"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique execution id for a workflow"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique user id for which the workflow is being executed"
+          },
+          "query": {
+            "description": "Search query string",
+            "minLength": 1,
+            "type": "string"
+          },
+          "search_depth": {
+            "default": "Basic",
+            "description": "Search depth: 'Basic' (fast) or 'Advanced' (comprehensive)",
+            "enum": [
+              "Basic",
+              "Advanced"
+            ],
+            "type": "string"
+          },
+          "max_results": {
+            "default": 5,
+            "description": "Number of results to return (1-10)",
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tavily_api_key": {
+            "description": "Tavily API key used to authenticate search requests",
+            "format": "password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "tavily_base_url": {
+            "description": "Tavily search API endpoint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "tavily_api_key",
+          "tavily_base_url"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "payload"
+    ],
+    "type": "object"
+  },
+  "meta": {
+    "display_name": "Web Search",
+    "icon": "TbWorldSearch",
+    "category": "Web Search",
+    "connection_name": [
+      {
+        "type": "Tavily",
+        "dependency": "",
+        "fields": [
+          "tavily_api_key",
+          "tavily_base_url"
+        ]
+      }
+    ],
+    "dependencies": {},
+    "fields": {
+      "query": {
+        "type": "textarea",
+        "description": "Search query string"
+      }
+    },
+    "hidden_properties": [
+      "workflow_id",
+      "execution_id",
+      "user_id"
+    ],
+    "fastmcp": {
+      "tags": []
+    }
+  }
+}

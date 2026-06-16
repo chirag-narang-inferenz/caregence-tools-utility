@@ -1,0 +1,268 @@
+{
+  "name": "intelligent_agent",
+  "description": "An AI-powered agent that executes user instructions, processes workflow outputs, and generates responses.",
+  "input_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "payload": {
+        "properties": {
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique workflow id"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique execution id for a workflow"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "unique user id for which the workflow is being executed"
+          },
+          "llm": {
+            "description": "Credentials for authenticating with language model services.",
+            "oneOf": [
+              {
+                "properties": {
+                  "model_type": {
+                    "const": "Azure",
+                    "default": "Azure",
+                    "type": "string"
+                  },
+                  "azure_openai_endpoint": {
+                    "description": "Endpoint URL for Azure OpenAI service.",
+                    "type": "string"
+                  },
+                  "azure_openai_api_key": {
+                    "description": "API key for Azure OpenAI service.",
+                    "type": "string"
+                  },
+                  "azure_openai_deployment": {
+                    "description": "Deployment name for Azure OpenAI service.",
+                    "type": "string"
+                  },
+                  "azure_openai_api_version": {
+                    "description": "API version for Azure OpenAI service.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "azure_openai_endpoint",
+                  "azure_openai_api_key",
+                  "azure_openai_deployment",
+                  "azure_openai_api_version"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "model_type": {
+                    "const": "AWS",
+                    "default": "AWS",
+                    "type": "string"
+                  },
+                  "aws_access_key_id": {
+                    "description": "AWS access key ID",
+                    "type": "string"
+                  },
+                  "aws_secret_access_key": {
+                    "description": "AWS secret access key",
+                    "type": "string"
+                  },
+                  "aws_region": {
+                    "description": "AWS region (e.g., us-west-2)",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "aws_access_key_id",
+                  "aws_secret_access_key",
+                  "aws_region"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "instruction": {
+            "description": "User instruction for the intelligent agent to process.",
+            "type": "string"
+          },
+          "tool_outputs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Structured outputs from upstream tools in the pipeline."
+          },
+          "mcp_server_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "MCP server endpoint URL. Supports http://, https:// schemes."
+          },
+          "authentication": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "type": {
+                        "const": "None",
+                        "default": "None",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "type": {
+                        "const": "API Key",
+                        "default": "API Key",
+                        "type": "string"
+                      },
+                      "api_key": {
+                        "description": "API key for authentication",
+                        "type": "string"
+                      },
+                      "header_name": {
+                        "default": "x-api-key",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "api_key"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "type": {
+                        "const": "Bearer Token",
+                        "default": "Bearer Token",
+                        "type": "string"
+                      },
+                      "token": {
+                        "description": "Bearer token for authentication",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "token"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Authentication details for connecting to external MCP server if required. If not provided, no authentication will be used."
+          },
+          "selected_tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "List of external MCP tools"
+          }
+        },
+        "required": [
+          "llm",
+          "instruction"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "payload"
+    ],
+    "type": "object"
+  },
+  "meta": {
+    "display_name": "Intelligent Agent",
+    "icon": "LuBrain",
+    "category": "AI Services",
+    "connection_name": [
+      {
+        "type": "Azure_OpenAI",
+        "dependency": "Azure",
+        "fields": [
+          "azure_openai_endpoint",
+          "azure_openai_api_key",
+          "azure_openai_api_version",
+          "azure_openai_deployment"
+        ]
+      },
+      {
+        "type": "AWS_Bedrock",
+        "dependency": "AWS",
+        "fields": [
+          "aws_access_key_id",
+          "aws_secret_access_key",
+          "aws_region"
+        ]
+      }
+    ],
+    "dependencies": {},
+    "fields": {
+      "instruction": {
+        "type": "textarea",
+        "description": "Defines how the agent should process the received tool outputs, if provided."
+      }
+    },
+    "hidden_properties": [
+      "workflow_id",
+      "execution_id",
+      "tool_outputs",
+      "user_id"
+    ],
+    "fastmcp": {
+      "tags": []
+    }
+  }
+}
