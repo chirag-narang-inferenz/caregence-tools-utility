@@ -71,8 +71,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const nonNull = fieldSchema.anyOf.find(s => s.type !== 'null');
             if (nonNull) effectiveSchema = { ...nonNull, description: fieldSchema.description, title: fieldSchema.title, default: fieldSchema.default };
         }
+        console.log("effectiveSchema:", effectiveSchema)
+        console.log("fieldSchema:", fieldSchema)
+        console.log("name:", name)
+        console.log()
 
-        const label = effectiveSchema.title || fieldSchema.title || name;
+
+
+        const label =  effectiveSchema.display_title || fieldSchema.display_title ||effectiveSchema.title || fieldSchema.title || name 
+        console.log("label:", label)
         const desc = effectiveSchema.description || fieldSchema.description || '';
         const defaultVal = effectiveSchema.default !== undefined ? effectiveSchema.default : fieldSchema.default;
 
@@ -315,9 +322,15 @@ document.addEventListener('DOMContentLoaded', () => {
         grid.className = 'fields-grid';
         const metaFields = (window.TOOL_META && window.TOOL_META.fields) || {};
 
+        console.log("props:",props)
+        console.log("window.TOOL_META.fields:", window.TOOL_META.fields)
+
+
         Object.entries(props).forEach(([name, fieldSchema]) => {
             const fullId = namePrefix ? `${namePrefix}.${name}` : name;
             const dotId = fullId;
+            console.log("props fieldsceham:", fieldSchema)
+            console.log("props name:", name)
 
             let resolved = fieldSchema;
             if (fieldSchema.$ref) {
@@ -335,17 +348,18 @@ document.addEventListener('DOMContentLoaded', () => {
             let nestedResolved = resolved;
             if (nestedResolved.anyOf) {
                 const nonNullSchema = nestedResolved.anyOf.find(s => s.type !== 'null');
+                console.log("nestedResolved.title:", nestedResolved.display_title)
                 if (nonNullSchema) {
                     nestedResolved = {
                         ...nonNullSchema,
-                        title: nestedResolved.title,
+                        title: nestedResolved.display_title,
                         description: nestedResolved.description,
                         default: nestedResolved.default
                     };
                     if (nestedResolved.$ref) {
                         nestedResolved = {
                             ...(resolveDef(nestedResolved.$ref, defs) || nestedResolved),
-                            title: nestedResolved.title,
+                            title: nestedResolved.display_title,
                             description: nestedResolved.description,
                             default: nestedResolved.default
                         };
@@ -365,7 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nestedSection.className = 'nested-discriminator-section';
                 const nestedTitle = document.createElement('h3');
                 nestedTitle.className = 'section-title';
-                nestedTitle.textContent = nestedResolved.title || name;
+                nestedTitle.textContent = nestedResolved.display_title || nestedResolved.title || name;
                 nestedSection.appendChild(nestedTitle);
 
                 buildDiscriminatedUnion(nestedResolved, defs, nestedSection, 1, skipKeys, activeConnections, fullId);
@@ -378,7 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nestedSection.className = 'nested-object-section';
                 const nestedTitle = document.createElement('h4');
                 nestedTitle.className = 'section-sub-title';
-                nestedTitle.textContent = nestedResolved.title || name;
+                nestedTitle.textContent = nestedResolved.display_title || name;
                 nestedSection.appendChild(nestedTitle);
 
                 buildObjectFields(nestedResolved, defs, nestedSection, fullId, skipKeys);
@@ -387,6 +401,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const fieldMeta = metaFields[name] || {};
+            console.log("fieldMeta:", fieldMeta)
+            console.log("nestedResolved:",nestedResolved)
             const fieldEl = buildField(name, nestedResolved, reqList, defs, namePrefix, fieldMeta);
             if (fieldEl) grid.appendChild(fieldEl);
         });
@@ -634,6 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const section = document.createElement('div');
             section.className = 'schema-section';
+            console.log("resolved:",resolved)
             const fieldEl = buildField(propName, resolved, required, defs);
             if (fieldEl) section.appendChild(fieldEl);
             root.appendChild(section);

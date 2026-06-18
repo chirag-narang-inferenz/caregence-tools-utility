@@ -33,7 +33,7 @@ CORS(app)
 
 # Global tools list that can be updated dynamically from the MCP server
 DYNAMIC_TOOLS = []
-CURRENT_SSE_URL = "http://192.168.8.191:9090/sse"
+CURRENT_SSE_URL = "http://localhost:9090/sse"
 CAREGENCE_CONNECTIONS = []
 CACHED_TOKEN = None
 
@@ -197,6 +197,8 @@ async def fetch_tools_via_mcp(sse_url: str):
                         tools_list.append(tool_dict)
                     
                     CURRENT_SSE_URL = url
+                    with open("tools1.json","w") as file:
+                        json.dump(tools_list, file, indent=2)
                     return tools_list
         except Exception as e:
             print(f"[MCP] sse_client failed for {url}: {e}")
@@ -228,6 +230,8 @@ async def fetch_tools_via_mcp(sse_url: str):
                             tools_list.append(tool_dict)
                         
                         CURRENT_SSE_URL = url
+                        with open("tools1.json","w") as file:
+                            json.dump(tools_list, file, indent=2)
                         return tools_list
             except Exception as e:
                 print(f"[MCP] streamablehttp_client failed for {url}: {e}")

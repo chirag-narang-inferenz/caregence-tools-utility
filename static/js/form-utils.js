@@ -357,12 +357,20 @@ function generateDisplayProperties(schema, skipFields, meta) {
     }
 
     function parseSchema(currentSchema, prefix = '', skipProp = null, parentPath = '') {
+        console.log("currentSchema:", currentSchema)
         if (!currentSchema) return [];
         let resolved = resolve(currentSchema);
+        console.log("resolved:", resolved)
+
         let nodes = [];
 
         if (resolved.discriminator) {
+        
             const propName = resolved.discriminator.propertyName;
+            console.log("resolved.discriminator:", resolved.discriminator)
+            console.log("propName:", propName)
+            console.log("resolved.display_title:", resolved.display_title)
+
             let mapping = resolved.discriminator.mapping || {};
 
             if (Object.keys(mapping).length === 0 && resolved.oneOf) {
@@ -382,12 +390,12 @@ function generateDisplayProperties(schema, skipFields, meta) {
                     }
                 });
             }
-
+            
             let discNode = {
                 name: propName,
                 propertyName: prefix + propName,
                 type: ['string'],
-                title: propName,
+                title: resolved.display_title || propName,
                 required: true,
                 enum: Object.keys(mapping),
                 isDiscriminator: true,
@@ -409,16 +417,18 @@ function generateDisplayProperties(schema, skipFields, meta) {
         if (resolved.properties) {
             const reqList = resolved.required || [];
             Object.entries(resolved.properties).forEach(([name, propSchema]) => {
+                console.log("propSchema:", propSchema)
                 if (name === skipProp) return;
 
                 const fullName = prefix ? `${prefix}${name}` : name;
                 if (shouldSkip(name, fullName)) return;
 
                 let pResolved = resolve(propSchema);
+                console.log("pResolved:", pResolved)
                 
                 // Connection checking at this level is handled globally via dependencies above.
 
-                const origTitle = pResolved.title;
+                const origTitle = pResolved.display_title;
                 const origDesc = pResolved.description;
                 const origDefault = pResolved.default;
 
@@ -436,15 +446,20 @@ function generateDisplayProperties(schema, skipFields, meta) {
                 let type = Array.isArray(pResolved.type) ? pResolved.type : (pResolved.type ? [pResolved.type] : ['string']);
                 const fieldMetaType = meta && meta.fields && meta.fields[name] && meta.fields[name].type;
                 if (fieldMetaType) type = [fieldMetaType];
+                console.log("node 2 :", pResolved.display_title)
+                console.log("node 3 :", origTitle)
+                console.log("node 4 :", pResolved.title)
+                console.log("node 5 :", name)
 
                 let node = {
                     name: name,
                     propertyName: fullName,
                     type: type,
-                    title: origTitle || pResolved.title || name,
+                    title: pResolved.display_title || origTitle || pResolved.title || name,
                     required: reqList.includes(name),
                     description: origDesc || pResolved.description || '',
                 };
+                console.log("node:", node)
 
                 if (meta && meta.dependencies && meta.dependencies.length > 0) {
                     const fieldDeps = meta.dependencies.filter(d =>
@@ -485,7 +500,9 @@ function generateDisplayProperties(schema, skipFields, meta) {
 function updateMetadataDisplay(skipFields) {
     const meta = window.TOOL_META || {};
     const schema = window.TOOL_SCHEMA || {};
+    console.log("schema:", schema)
     const displayProps = generateDisplayProperties(schema, skipFields, meta);
+    console.log("displayProps:", displayProps)
 
     const hasMultiOp = !!(schema.properties && Object.values(schema.properties).some(p => {
         let res = p;
