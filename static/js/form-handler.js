@@ -85,6 +85,295 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const metaType = fieldMeta.type;
 
+        if (metaType === 'dynamic-array') {
+            let itemSchema = {};
+            if (fieldSchema.items) {
+                let itemsRef = fieldSchema.items.$ref;
+                if (itemsRef) {
+                    itemSchema = resolveDef(itemsRef, defs) || {};
+                } else {
+                    itemSchema = fieldSchema.items;
+                }
+            }
+            const itemProperties = itemSchema.properties || {};
+            const hasPhone = 'phone' in itemProperties || 'Phone' in itemProperties;
+            const hasEmail = 'email' in itemProperties || 'Email' in itemProperties;
+
+            const group = makeGroup(fullId, label, required, true);
+            const container = document.createElement('div');
+            container.className = 'dynamic-array-container';
+            
+            const listWrapper = document.createElement('div');
+            listWrapper.className = 'dynamic-array-list';
+            container.appendChild(listWrapper);
+            
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'btn-secondary add-array-item-btn';
+            addBtn.style.cssText = 'margin-top: 0.5rem;';
+            addBtn.innerHTML = `<i data-lucide="plus" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"></i> <span>${fieldMeta.add_button_label || '+ Add Item'}</span>`;
+            container.appendChild(addBtn);
+            
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = fullId;
+            hidden.value = '[]';
+            container.appendChild(hidden);
+            
+            group.appendChild(container);
+            addHelp(group, desc);
+            
+            function updateHiddenValue() {
+                const items = [];
+                listWrapper.querySelectorAll('.dynamic-array-card').forEach(card => {
+                    const phone = card.querySelector('.phone-input')?.value.trim() || '';
+                    const email = card.querySelector('.email-input')?.value.trim() || '';
+                    
+                    const data = {};
+                    card.querySelectorAll('.kv-row').forEach(row => {
+                        const k = row.querySelector('.kv-key-input')?.value.trim() || '';
+                        const v = row.querySelector('.kv-value-input')?.value.trim() || '';
+                        if (k) {
+                            data[k] = v;
+                        }
+                    });
+                    
+                    const item = { data };
+                    if (hasPhone && phone) item.phone = phone;
+                    if (hasEmail && email) item.email = email;
+                    items.push(item);
+                });
+                hidden.value = JSON.stringify(items);
+                hidden.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            
+            function createCard(initialData = { phone: '', email: '', data: {} }) {
+                const card = document.createElement('div');
+                card.className = 'dynamic-array-card glass';
+                card.style.cssText = 'border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; position: relative; background: var(--card-bg);';
+                
+                const deleteCardBtn = document.createElement('button');
+                deleteCardBtn.type = 'button';
+                deleteCardBtn.className = 'btn-icon delete-card-btn';
+                deleteCardBtn.innerHTML = '<i data-lucide="trash-2" style="width:16px;height:16px;color:#ef4444;"></i>';
+                deleteCardBtn.style.cssText = 'position: absolute; top: 1rem; right: 1rem; background:none; border:none; cursor:pointer; padding: 4px;';
+                deleteCardBtn.addEventListener('click', () => {
+                    card.remove();
+                    updateHiddenValue();
+                });
+                card.appendChild(deleteCardBtn);
+                
+                const cardGrid = document.createElement('div');
+                cardGrid.className = 'fields-grid';
+                const columns = (hasPhone && hasEmail) ? '1fr 1fr' : '1fr';
+                cardGrid.style.cssText = `display: grid; grid-template-columns: ${columns}; gap: 1rem; margin-top: 1rem;`;
+                
+                let gridHasFields = false;
+                if (hasPhone) {
+                    const phoneGroup = document.createElement('div');
+                    phoneGroup.className = 'form-group';
+                    phoneGroup.innerHTML = '<label>Phone Number</label>';
+                    const phoneInput = document.createElement('input');
+                    phoneInput.type = 'text';
+                    phoneInput.className = 'phone-input';
+                    phoneInput.placeholder = 'e.g., +15551234567';
+                    phoneInput.value = initialData.phone || '';
+                    phoneInput.addEventListener('input', updateHiddenValue);
+                    phoneGroup.appendChild(phoneInput);
+                    cardGrid.appendChild(phoneGroup);
+                    gridHasFields = true;
+                }
+                
+                if (hasEmail) {
+                    const emailGroup = document.createElement('div');
+                    emailGroup.className = 'form-group';
+                    emailGroup.innerHTML = '<label>Email Address</label>';
+                    const emailInput = document.createElement('input');
+                    emailInput.type = 'email';
+                    emailInput.className = 'email-input';
+                    emailInput.placeholder = 'e.g., user@example.com';
+                    emailInput.value = initialData.email || '';
+                    emailInput.addEventListener('input', updateHiddenValue);
+                    emailGroup.appendChild(emailInput);
+                    cardGrid.appendChild(emailGroup);
+                    gridHasFields = true;
+                }
+                
+                if (gridHasFields) {
+                    card.appendChild(cardGrid);
+                }
+                
+                // Data Group (Key-Value)
+                const dataGroup = document.createElement('div');
+                dataGroup.className = 'form-group full-width';
+                dataGroup.style.marginTop = '1rem';
+                dataGroup.innerHTML = '<label>Personalization Data</label>';
+                
+                const kvContainer = document.createElement('div');
+                kvContainer.className = 'kv-rows-container';
+                dataGroup.appendChild(kvContainer);
+                
+                const addFieldBtn = document.createElement('button');
+                addFieldBtn.type = 'button';
+                addFieldBtn.className = 'btn-secondary add-field-btn';
+                addFieldBtn.style.cssText = 'padding: 0.25rem 0.75rem; font-size: 0.8rem; margin-top: 0.5rem;';
+                addFieldBtn.innerHTML = '<i data-lucide="plus" style="width:12px;height:12px;vertical-align:middle;margin-right:2px;"></i> Add Field';
+                
+                function createKvRow(kVal = '', vVal = '') {
+                    const row = document.createElement('div');
+                    row.className = 'kv-row';
+                    row.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center;';
+                    
+                    const kInp = document.createElement('input');
+                    kInp.type = 'text';
+                    kInp.className = 'kv-key-input';
+                    kInp.placeholder = 'Key';
+                    kInp.style.flex = '1';
+                    kInp.value = kVal;
+                    kInp.addEventListener('input', updateHiddenValue);
+                    
+                    const vInp = document.createElement('input');
+                    vInp.type = 'text';
+                    vInp.className = 'kv-value-input';
+                    vInp.placeholder = 'Value';
+                    vInp.style.flex = '1';
+                    vInp.value = vVal;
+                    vInp.addEventListener('input', updateHiddenValue);
+                    
+                    const delRowBtn = document.createElement('button');
+                    delRowBtn.type = 'button';
+                    delRowBtn.className = 'btn-icon delete-row-btn';
+                    delRowBtn.innerHTML = '<i data-lucide="x" style="width:14px;height:14px;color:#ef4444;"></i>';
+                    delRowBtn.style.cssText = 'background:none; border:none; cursor:pointer; padding: 4px;';
+                    delRowBtn.addEventListener('click', () => {
+                        row.remove();
+                        updateHiddenValue();
+                    });
+                    
+                    row.appendChild(kInp);
+                    row.appendChild(vInp);
+                    row.appendChild(delRowBtn);
+                    kvContainer.appendChild(row);
+                    if (window.lucide) lucide.createIcons();
+                }
+                
+                // Populate initial data fields
+                if (initialData.data && Object.keys(initialData.data).length > 0) {
+                    Object.entries(initialData.data).forEach(([k, v]) => {
+                        createKvRow(k, v);
+                    });
+                }
+                
+                addFieldBtn.addEventListener('click', () => {
+                    createKvRow();
+                });
+                
+                dataGroup.appendChild(addFieldBtn);
+                card.appendChild(dataGroup);
+                
+                listWrapper.appendChild(card);
+                if (window.lucide) lucide.createIcons();
+                updateHiddenValue();
+            }
+            
+            addBtn.addEventListener('click', () => {
+                createCard();
+            });
+            
+            // Initial item
+            createCard();
+            
+            return group;
+        }
+
+        // Custom widget overrides: key-value (Standalone dictionary editor)
+        if (metaType === 'key-value') {
+            const group = makeGroup(fullId, label, required, true);
+            const container = document.createElement('div');
+            container.className = 'key-value-container';
+            
+            const rowsContainer = document.createElement('div');
+            rowsContainer.className = 'kv-rows-container';
+            container.appendChild(rowsContainer);
+            
+            const addFieldBtn = document.createElement('button');
+            addFieldBtn.type = 'button';
+            addFieldBtn.className = 'btn-secondary add-field-btn';
+            addFieldBtn.style.cssText = 'margin-top: 0.5rem;';
+            addFieldBtn.innerHTML = `<i data-lucide="plus" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"></i> <span>${fieldMeta.add_button_label || '+ Add Field'}</span>`;
+            container.appendChild(addFieldBtn);
+            
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = fullId;
+            hidden.value = '{}';
+            container.appendChild(hidden);
+            
+            group.appendChild(container);
+            addHelp(group, desc);
+            
+            function updateHiddenValue() {
+                const data = {};
+                rowsContainer.querySelectorAll('.kv-row').forEach(row => {
+                    const k = row.querySelector('.kv-key-input')?.value.trim() || '';
+                    const v = row.querySelector('.kv-value-input')?.value.trim() || '';
+                    if (k) {
+                        data[k] = v;
+                    }
+                });
+                hidden.value = JSON.stringify(data);
+                hidden.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            
+            function createKvRow(kVal = '', vVal = '') {
+                const row = document.createElement('div');
+                row.className = 'kv-row';
+                row.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center;';
+                
+                const kInp = document.createElement('input');
+                kInp.type = 'text';
+                kInp.className = 'kv-key-input';
+                kInp.placeholder = 'Key';
+                kInp.style.flex = '1';
+                kInp.value = kVal;
+                kInp.addEventListener('input', updateHiddenValue);
+                
+                const vInp = document.createElement('input');
+                vInp.type = 'text';
+                vInp.className = 'kv-value-input';
+                vInp.placeholder = 'Value';
+                vInp.style.flex = '1';
+                vInp.value = vVal;
+                vInp.addEventListener('input', updateHiddenValue);
+                
+                const delRowBtn = document.createElement('button');
+                delRowBtn.type = 'button';
+                delRowBtn.className = 'btn-icon delete-row-btn';
+                delRowBtn.innerHTML = '<i data-lucide="x" style="width:14px;height:14px;color:#ef4444;"></i>';
+                delRowBtn.style.cssText = 'background:none; border:none; cursor:pointer; padding: 4px;';
+                delRowBtn.addEventListener('click', () => {
+                    row.remove();
+                    updateHiddenValue();
+                });
+                
+                row.appendChild(kInp);
+                row.appendChild(vInp);
+                row.appendChild(delRowBtn);
+                rowsContainer.appendChild(row);
+                if (window.lucide) lucide.createIcons();
+                updateHiddenValue();
+            }
+            
+            addFieldBtn.addEventListener('click', () => {
+                createKvRow();
+            });
+            
+            // Start with one empty row
+            createKvRow();
+            
+            return group;
+        }
+
         // Custom widget overrides: HTML (Quill editor)
         if (metaType === 'html') {
             const group = makeGroup(fullId, label, required, true);
@@ -520,7 +809,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 section.appendChild(title);
 
                 connections.forEach(c => {
-                    const shouldInclude = connectionMatchesSchemaContext(c, chosen, def, namePrefix);
+                    // const shouldInclude = connectionMatchesSchemaContext(c, chosen, def, namePrefix);
+                    const shouldInclude = connectionMatchesSchemaContext(c, chosen, def, fullId);
 
                     if (shouldInclude) {
                         const connName =

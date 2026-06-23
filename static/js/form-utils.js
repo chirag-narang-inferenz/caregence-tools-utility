@@ -8,9 +8,23 @@ function connectionMatchesSchemaContext(c, chosen, def, namePrefix = '') {
     
     const cleanSubDep = slugify(c.sub_dependency || '');
     const cleanType = slugify(c.type || '');
+
     const cleanPrefix = slugify(namePrefix || '');
+    console.log("cleanPrefix:", cleanPrefix)
     
     // Context filter based on property parent name
+    // if (cleanPrefix) {
+    //     if (cleanPrefix.includes('llm')) {
+    //         const isLLM = cleanSubDep.includes('credential') || cleanSubDep.includes('openai') || cleanSubDep.includes('bedrock') ||
+    //                       cleanType.includes('openai') || cleanType.includes('bedrock') || cleanType.includes('llm');
+    //         if (!isLLM) return false;
+    //     } else if (cleanPrefix.includes('source') || cleanPrefix.includes('operations')) {
+    //         const isStorageOrOperations = cleanSubDep.includes('config') || cleanSubDep.includes('storage') || cleanSubDep.includes('s3') || cleanSubDep.includes('blob') ||
+    //                                       cleanType.includes('storage') || cleanType.includes('s3') || cleanType.includes('email') || cleanType.includes('cloud');
+    //         if (!isStorageOrOperations) return false;
+    //     }
+    // }
+
     if (cleanPrefix) {
         if (cleanPrefix.includes('llm')) {
             const isLLM = cleanSubDep.includes('credential') || cleanSubDep.includes('openai') || cleanSubDep.includes('bedrock') ||
@@ -18,7 +32,9 @@ function connectionMatchesSchemaContext(c, chosen, def, namePrefix = '') {
             if (!isLLM) return false;
         } else if (cleanPrefix.includes('source') || cleanPrefix.includes('operations')) {
             const isStorageOrOperations = cleanSubDep.includes('config') || cleanSubDep.includes('storage') || cleanSubDep.includes('s3') || cleanSubDep.includes('blob') ||
-                                          cleanType.includes('storage') || cleanType.includes('s3') || cleanType.includes('email') || cleanType.includes('cloud');
+                                          cleanType.includes('storage') || cleanType.includes('s3') || cleanType.includes('email') || cleanType.includes('cloud') ||
+                                          cleanType.includes('postgres') || cleanType.includes('mysql') || cleanType.includes('snowflake') || cleanType.includes('databricks') ||
+                                          cleanType.includes('db') || cleanType.includes('database') || cleanType.includes('sql');
             if (!isStorageOrOperations) return false;
         }
     }
@@ -103,13 +119,15 @@ function schemaMatchesConnection(resolvedSchema, connection) {
     return connFields.every(cf => props.includes(cf));
 }
 
-const ALWAYS_SHOW_FIELDS = new Set([
-    'access_key',
-    'secret_key',
-    'region',
-    'region_name',
-    'aws_sender'
-]);
+// const ALWAYS_SHOW_FIELDS = new Set([
+//     'access_key',
+//     'secret_key',
+//     'region',
+//     'region_name',
+//     'aws_sender'
+// ]);
+
+const ALWAYS_SHOW_FIELDS = new Set([]);
 
 function isCredentialField(fieldName) {
     if (!fieldName) return false;
@@ -234,11 +252,11 @@ function autoDiscoverConnections(schemaObj) {
                     if (fields.length >= 2) {
                         let connType = inferConnectionType(fields, dependencyVal.charAt(0).toUpperCase() + dependencyVal.slice(1));
                         const connTypeLower = connType.toLowerCase();
-                        if (connTypeLower.includes('azure')) {
-                            connType = 'Azure_OpenAI';
-                        } else if (connTypeLower.includes('aws') || connTypeLower.includes('bedrock') || connTypeLower.includes('s3')) {
-                            connType = 'AWS_Bedrock';
-                        }
+                        // if (connTypeLower.includes('azure')) {
+                        //     connType = 'Azure_OpenAI';
+                        // } else if (connTypeLower.includes('aws') || connTypeLower.includes('bedrock') || connTypeLower.includes('s3')) {
+                        //     connType = 'AWS_Bedrock';
+                        // }
 
                         const exists = connections.some(c => c.dependency === dependencyVal && c.type === connType);
                         if (!exists) {
@@ -533,6 +551,8 @@ function updateMetadataDisplay(skipFields) {
         "hidden_property": skipFields.join(','),
         "has_multi_operation": hasMultiOp
     };
+
+    console.log("exportObj:", exportObj)
 
     if (meta.dependencies && meta.dependencies.length > 0) {
         exportObj.dependencies = meta.dependencies;
