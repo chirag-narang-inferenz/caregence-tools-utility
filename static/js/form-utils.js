@@ -462,7 +462,8 @@ function generateDisplayProperties(schema, skipFields, meta) {
                 }
 
                 let type = Array.isArray(pResolved.type) ? pResolved.type : (pResolved.type ? [pResolved.type] : ['string']);
-                const fieldMetaType = meta && meta.fields && meta.fields[name] && meta.fields[name].type;
+                const fieldMeta = resolveFieldMeta(name, meta && meta.fields);
+                const fieldMetaType = fieldMeta && fieldMeta.type;
                 if (fieldMetaType) type = [fieldMetaType];
                 console.log("node 2 :", pResolved.display_title)
                 console.log("node 3 :", origTitle)
@@ -564,12 +565,149 @@ function updateMetadataDisplay(skipFields) {
     }
 }
 
+function resolveFieldMeta(name, fieldsMeta) {
+    if (!fieldsMeta || !name) return {};
+    if (fieldsMeta[name]) return fieldsMeta[name];
+    
+    // Normalize string to match (lowercase, remove spaces, underscores, hyphens)
+    const normalize = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normName = normalize(name);
+    
+    // 1. Direct normalized match
+    for (const key in fieldsMeta) {
+        if (normalize(key) === normName) {
+            return fieldsMeta[key];
+        }
+    }
+    
+    // 2. Plural/singular normalized match (by stripping all 's' characters)
+    const stripS = s => s.replace(/s/g, '');
+    const strippedName = stripS(normName);
+    for (const key in fieldsMeta) {
+        if (stripS(normalize(key)) === strippedName) {
+            return fieldsMeta[key];
+        }
+    }
+    
+    return {};
+}
+
+function getAllowedExtensions(fieldMeta, fieldSchema) {
+    const exts = new Set();
+    
+    // 1. Check if allowed_extensions is explicitly defined
+    if (fieldMeta && Array.isArray(fieldMeta.allowed_extensions)) {
+        fieldMeta.allowed_extensions.forEach(e => exts.add(e.toLowerCase().startsWith('.') ? e.toLowerCase() : '.' + e.toLowerCase()));
+    } else if (fieldMeta && typeof fieldMeta.allowed_extensions === 'string') {
+        fieldMeta.allowed_extensions.split(',').forEach(e => {
+            const trimmed = e.trim().toLowerCase();
+            if (trimmed) exts.add(trimmed.startsWith('.') ? trimmed : '.' + trimmed);
+        });
+    }
+    
+    // 2. Check if accept is defined
+    const accept = (fieldMeta && fieldMeta.accept) || (fieldSchema && fieldSchema.accept);
+    if (accept && typeof accept === 'string') {
+        accept.split(',').forEach(e => {
+            const trimmed = e.trim().toLowerCase();
+            if (trimmed.startsWith('.')) {
+                exts.add(trimmed);
+            } else if (trimmed.includes('/')) {
+                if (trimmed.startsWith('image/')) {
+                    ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'].forEach(x => exts.add(x));
+                } else if (trimmed === 'application/json') {
+                    exts.add('.json');
+                } else if (trimmed.includes('csv') || trimmed.includes('excel') || trimmed.includes('spreadsheet')) {
+                    ['.csv', '.xls', '.xlsx'].forEach(x => exts.add(x));
+                }
+            }
+        });
+    }
+
+    // 3. Fallback: Parse description/title/name
+    const desc = ((fieldMeta && fieldMeta.description) || (fieldSchema && fieldSchema.description) || '').toLowerCase();
+    const title = ((fieldMeta && fieldMeta.title) || (fieldSchema && fieldSchema.title) || '').toLowerCase();
+    const combined = desc + ' ' + title;
+
+    if (combined.includes('csv')) {
+        exts.add('.csv');
+    }
+    if (combined.includes('excel') || combined.includes('xls') || combined.includes('xlsx')) {
+        exts.add('.xls');
+        exts.add('.xlsx');
+    }
+    if (combined.includes('json')) {
+        exts.add('.json');
+    }
+    if (combined.includes('pdf')) {
+        exts.add('.pdf');
+    }
+    if (combined.includes('image') || combined.includes('png') || combined.includes('jpg') || combined.includes('jpeg') || combined.includes('gif')) {
+        exts.add('.png');
+        exts.add('.jpg');
+        exts.add('.jpeg');
+        exts.add('.gif');
+        exts.add('.webp');
+    }
+    if (combined.includes('video') || combined.includes('mp4') || combined.includes('media')) {
+        exts.add('.mp4');
+        exts.add('.mov');
+        exts.add('.avi');
+        exts.add('.mkv');
+        exts.add('.webm');
+        if (combined.includes('media')) {
+            exts.add('.png');
+            exts.add('.jpg');
+            exts.add('.jpeg');
+            exts.add('.gif');
+            exts.add('.webp');
+        }
+    }
+    if (combined.includes('audio') || combined.includes('mp3') || combined.includes('wav')) {
+        exts.add('.mp3');
+        exts.add('.wav');
+        exts.add('.m4a');
+        exts.add('.ogg');
+    }
+
+    return Array.from(exts);
+}
+
+function copyTextToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+    } else {
+        return new Promise((resolve, reject) => {
+            try {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.top = "0";
+                textArea.style.left = "0";
+                textArea.style.position = "fixed";
+                textArea.style.opacity = "0";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                const successful = document.execCommand('copy');
+                document.body.removeChild(textArea);
+                if (successful) {
+                    resolve();
+                } else {
+                    reject(new Error("Fallback copy failed"));
+                }
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+}
+
 function setupMetadataUI() {
     const copyBtn = document.getElementById('copy-metadata-btn');
     if (copyBtn) {
         copyBtn.addEventListener('click', () => {
             const json = document.getElementById('metadata-json').textContent;
-            navigator.clipboard.writeText(json).then(() => {
+            copyTextToClipboard(json).then(() => {
                 const orig = copyBtn.innerHTML;
                 copyBtn.innerHTML = '<i data-lucide="check" style="width:16px; height:16px;"></i> <span>Copied!</span>';
                 if (window.lucide) lucide.createIcons();
@@ -577,6 +715,8 @@ function setupMetadataUI() {
                     copyBtn.innerHTML = orig;
                     if (window.lucide) lucide.createIcons();
                 }, 2000);
+            }).catch(err => {
+                console.error("Failed to copy metadata:", err);
             });
         });
     }
@@ -590,7 +730,7 @@ function setupMetadataUI() {
     if (copyRawMetaBtn) {
         copyRawMetaBtn.addEventListener('click', () => {
             const json = document.getElementById('raw-meta-json').textContent;
-            navigator.clipboard.writeText(json).then(() => {
+            copyTextToClipboard(json).then(() => {
                 const orig = copyRawMetaBtn.innerHTML;
                 copyRawMetaBtn.innerHTML = '<i data-lucide="check" style="width:16px; height:16px;"></i> <span>Copied!</span>';
                 if (window.lucide) lucide.createIcons();
@@ -598,6 +738,8 @@ function setupMetadataUI() {
                     copyRawMetaBtn.innerHTML = orig;
                     if (window.lucide) lucide.createIcons();
                 }, 2000);
+            }).catch(err => {
+                console.error("Failed to copy raw metadata:", err);
             });
         });
     }

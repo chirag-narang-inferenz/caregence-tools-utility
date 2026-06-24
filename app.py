@@ -33,7 +33,7 @@ CORS(app)
 
 # Global tools list that can be updated dynamically from the MCP server
 DYNAMIC_TOOLS = []
-CURRENT_SSE_URL = "http://localhost:9090/sse"
+CURRENT_SSE_URL = "http://localhost:9090/mcp"
 CAREGENCE_CONNECTIONS = []
 CACHED_TOKEN = None
 

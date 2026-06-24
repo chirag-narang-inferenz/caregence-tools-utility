@@ -32,6 +32,136 @@ document.addEventListener('DOMContentLoaded', () => {
         group.appendChild(span);
     }
 
+    function createSearchableSelect(parentGroup, labelHTML, defaultText, searchPlaceholder = 'Search...') {
+        parentGroup.innerHTML = '';
+        if (labelHTML) {
+            parentGroup.innerHTML = labelHTML;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'custom-select-wrapper';
+
+        const trigger = document.createElement('div');
+        trigger.className = 'custom-select-trigger';
+        trigger.innerHTML = `<span>${defaultText}</span> <i data-lucide="chevron-down" style="width: 14px; height: 14px; color: var(--text-muted);"></i>`;
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'custom-select-dropdown';
+        dropdown.style.display = 'none';
+        dropdown.style.flexDirection = 'column';
+
+        const searchInp = document.createElement('input');
+        searchInp.type = 'text';
+        searchInp.className = 'custom-select-search';
+        searchInp.placeholder = searchPlaceholder;
+
+        const optionsContainer = document.createElement('div');
+        optionsContainer.className = 'custom-select-options';
+
+        dropdown.appendChild(searchInp);
+        dropdown.appendChild(optionsContainer);
+        wrapper.appendChild(trigger);
+        wrapper.appendChild(dropdown);
+        parentGroup.appendChild(wrapper);
+
+        if (window.lucide) lucide.createIcons();
+
+        let selectedValue = '';
+        let optionsList = []; // Array of { value, text }
+        let onChangeCallback = null;
+
+        // Toggle dropdown
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = dropdown.style.display === 'flex';
+            // Close all other dropdowns first
+            document.querySelectorAll('.custom-select-dropdown').forEach(d => {
+                if (d !== dropdown) d.style.display = 'none';
+            });
+            if (!isOpen) {
+                dropdown.style.display = 'flex';
+                searchInp.value = '';
+                filterOptions('');
+                setTimeout(() => searchInp.focus(), 10);
+            } else {
+                dropdown.style.display = 'none';
+            }
+        });
+
+        // Prevent closing when clicking inside the dropdown
+        dropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+
+        // Close when clicking outside
+        document.addEventListener('click', () => {
+            dropdown.style.display = 'none';
+        });
+
+        function filterOptions(term) {
+            optionsContainer.innerHTML = '';
+            const filtered = optionsList.filter(o => o.text.toLowerCase().includes(term.toLowerCase()));
+            if (filtered.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'custom-select-option empty';
+                empty.textContent = 'No matching items';
+                optionsContainer.appendChild(empty);
+                return;
+            }
+
+            filtered.forEach(o => {
+                const optEl = document.createElement('div');
+                optEl.className = 'custom-select-option';
+                if (o.value === selectedValue) {
+                    optEl.classList.add('selected');
+                }
+                optEl.textContent = o.text;
+                optEl.addEventListener('click', () => {
+                    selectedValue = o.value;
+                    trigger.querySelector('span').textContent = o.text;
+                    dropdown.style.display = 'none';
+                    if (onChangeCallback) {
+                        onChangeCallback(selectedValue);
+                    }
+                });
+                optionsContainer.appendChild(optEl);
+            });
+        }
+
+        searchInp.addEventListener('input', (e) => {
+            filterOptions(e.target.value);
+        });
+
+        return {
+            get value() {
+                return selectedValue;
+            },
+            set value(val) {
+                selectedValue = val;
+                const found = optionsList.find(o => o.value === val);
+                trigger.querySelector('span').textContent = found ? found.text : defaultText;
+            },
+            setOptions: (list) => {
+                optionsList = list;
+                filterOptions('');
+            },
+            clear: () => {
+                selectedValue = '';
+                trigger.querySelector('span').textContent = defaultText;
+                optionsList = [];
+                filterOptions('');
+            },
+            addEventListener: (event, callback) => {
+                if (event === 'change') {
+                    onChangeCallback = callback;
+                }
+            },
+            setPlaceholder: (text) => {
+                trigger.querySelector('span').textContent = text;
+            }
+        };
+    }
+
     function makeConnectionDropdown(connMeta, name = 'connection_name') {
         const connTypes = Array.isArray(connMeta.type) ? connMeta.type : [connMeta.type || 'Service'];
         const displayConnType = connTypes.join(' or ');
@@ -78,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-        const label =  effectiveSchema.display_title || fieldSchema.display_title ||effectiveSchema.title || fieldSchema.title || name 
+        const label = effectiveSchema.display_title || fieldSchema.display_title || effectiveSchema.title || fieldSchema.title || name
         console.log("label:", label)
         const desc = effectiveSchema.description || fieldSchema.description || '';
         const defaultVal = effectiveSchema.default !== undefined ? effectiveSchema.default : fieldSchema.default;
@@ -102,33 +232,33 @@ document.addEventListener('DOMContentLoaded', () => {
             const group = makeGroup(fullId, label, required, true);
             const container = document.createElement('div');
             container.className = 'dynamic-array-container';
-            
+
             const listWrapper = document.createElement('div');
             listWrapper.className = 'dynamic-array-list';
             container.appendChild(listWrapper);
-            
+
             const addBtn = document.createElement('button');
             addBtn.type = 'button';
             addBtn.className = 'btn-secondary add-array-item-btn';
             addBtn.style.cssText = 'margin-top: 0.5rem;';
             addBtn.innerHTML = `<i data-lucide="plus" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"></i> <span>${fieldMeta.add_button_label || '+ Add Item'}</span>`;
             container.appendChild(addBtn);
-            
+
             const hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.name = fullId;
             hidden.value = '[]';
             container.appendChild(hidden);
-            
+
             group.appendChild(container);
             addHelp(group, desc);
-            
+
             function updateHiddenValue() {
                 const items = [];
                 listWrapper.querySelectorAll('.dynamic-array-card').forEach(card => {
                     const phone = card.querySelector('.phone-input')?.value.trim() || '';
                     const email = card.querySelector('.email-input')?.value.trim() || '';
-                    
+
                     const data = {};
                     card.querySelectorAll('.kv-row').forEach(row => {
                         const k = row.querySelector('.kv-key-input')?.value.trim() || '';
@@ -137,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             data[k] = v;
                         }
                     });
-                    
+
                     const item = { data };
                     if (hasPhone && phone) item.phone = phone;
                     if (hasEmail && email) item.email = email;
@@ -146,12 +276,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 hidden.value = JSON.stringify(items);
                 hidden.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            
+
             function createCard(initialData = { phone: '', email: '', data: {} }) {
                 const card = document.createElement('div');
                 card.className = 'dynamic-array-card glass';
                 card.style.cssText = 'border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; position: relative; background: var(--card-bg);';
-                
+
                 const deleteCardBtn = document.createElement('button');
                 deleteCardBtn.type = 'button';
                 deleteCardBtn.className = 'btn-icon delete-card-btn';
@@ -162,12 +292,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateHiddenValue();
                 });
                 card.appendChild(deleteCardBtn);
-                
+
                 const cardGrid = document.createElement('div');
                 cardGrid.className = 'fields-grid';
                 const columns = (hasPhone && hasEmail) ? '1fr 1fr' : '1fr';
                 cardGrid.style.cssText = `display: grid; grid-template-columns: ${columns}; gap: 1rem; margin-top: 1rem;`;
-                
+
                 let gridHasFields = false;
                 if (hasPhone) {
                     const phoneGroup = document.createElement('div');
@@ -183,7 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     cardGrid.appendChild(phoneGroup);
                     gridHasFields = true;
                 }
-                
+
                 if (hasEmail) {
                     const emailGroup = document.createElement('div');
                     emailGroup.className = 'form-group';
@@ -198,32 +328,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     cardGrid.appendChild(emailGroup);
                     gridHasFields = true;
                 }
-                
+
                 if (gridHasFields) {
                     card.appendChild(cardGrid);
                 }
-                
+
                 // Data Group (Key-Value)
                 const dataGroup = document.createElement('div');
                 dataGroup.className = 'form-group full-width';
                 dataGroup.style.marginTop = '1rem';
                 dataGroup.innerHTML = '<label>Personalization Data</label>';
-                
+
                 const kvContainer = document.createElement('div');
                 kvContainer.className = 'kv-rows-container';
                 dataGroup.appendChild(kvContainer);
-                
+
                 const addFieldBtn = document.createElement('button');
                 addFieldBtn.type = 'button';
                 addFieldBtn.className = 'btn-secondary add-field-btn';
                 addFieldBtn.style.cssText = 'padding: 0.25rem 0.75rem; font-size: 0.8rem; margin-top: 0.5rem;';
                 addFieldBtn.innerHTML = '<i data-lucide="plus" style="width:12px;height:12px;vertical-align:middle;margin-right:2px;"></i> Add Field';
-                
+
                 function createKvRow(kVal = '', vVal = '') {
                     const row = document.createElement('div');
                     row.className = 'kv-row';
                     row.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center;';
-                    
+
                     const kInp = document.createElement('input');
                     kInp.type = 'text';
                     kInp.className = 'kv-key-input';
@@ -231,7 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     kInp.style.flex = '1';
                     kInp.value = kVal;
                     kInp.addEventListener('input', updateHiddenValue);
-                    
+
                     const vInp = document.createElement('input');
                     vInp.type = 'text';
                     vInp.className = 'kv-value-input';
@@ -239,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     vInp.style.flex = '1';
                     vInp.value = vVal;
                     vInp.addEventListener('input', updateHiddenValue);
-                    
+
                     const delRowBtn = document.createElement('button');
                     delRowBtn.type = 'button';
                     delRowBtn.className = 'btn-icon delete-row-btn';
@@ -249,40 +379,40 @@ document.addEventListener('DOMContentLoaded', () => {
                         row.remove();
                         updateHiddenValue();
                     });
-                    
+
                     row.appendChild(kInp);
                     row.appendChild(vInp);
                     row.appendChild(delRowBtn);
                     kvContainer.appendChild(row);
                     if (window.lucide) lucide.createIcons();
                 }
-                
+
                 // Populate initial data fields
                 if (initialData.data && Object.keys(initialData.data).length > 0) {
                     Object.entries(initialData.data).forEach(([k, v]) => {
                         createKvRow(k, v);
                     });
                 }
-                
+
                 addFieldBtn.addEventListener('click', () => {
                     createKvRow();
                 });
-                
+
                 dataGroup.appendChild(addFieldBtn);
                 card.appendChild(dataGroup);
-                
+
                 listWrapper.appendChild(card);
                 if (window.lucide) lucide.createIcons();
                 updateHiddenValue();
             }
-            
+
             addBtn.addEventListener('click', () => {
                 createCard();
             });
-            
+
             // Initial item
             createCard();
-            
+
             return group;
         }
 
@@ -291,27 +421,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const group = makeGroup(fullId, label, required, true);
             const container = document.createElement('div');
             container.className = 'key-value-container';
-            
+
             const rowsContainer = document.createElement('div');
             rowsContainer.className = 'kv-rows-container';
             container.appendChild(rowsContainer);
-            
+
             const addFieldBtn = document.createElement('button');
             addFieldBtn.type = 'button';
             addFieldBtn.className = 'btn-secondary add-field-btn';
             addFieldBtn.style.cssText = 'margin-top: 0.5rem;';
             addFieldBtn.innerHTML = `<i data-lucide="plus" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"></i> <span>${fieldMeta.add_button_label || '+ Add Field'}</span>`;
             container.appendChild(addFieldBtn);
-            
+
             const hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.name = fullId;
             hidden.value = '{}';
             container.appendChild(hidden);
-            
+
             group.appendChild(container);
             addHelp(group, desc);
-            
+
             function updateHiddenValue() {
                 const data = {};
                 rowsContainer.querySelectorAll('.kv-row').forEach(row => {
@@ -324,12 +454,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 hidden.value = JSON.stringify(data);
                 hidden.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            
+
             function createKvRow(kVal = '', vVal = '') {
                 const row = document.createElement('div');
                 row.className = 'kv-row';
                 row.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center;';
-                
+
                 const kInp = document.createElement('input');
                 kInp.type = 'text';
                 kInp.className = 'kv-key-input';
@@ -337,7 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 kInp.style.flex = '1';
                 kInp.value = kVal;
                 kInp.addEventListener('input', updateHiddenValue);
-                
+
                 const vInp = document.createElement('input');
                 vInp.type = 'text';
                 vInp.className = 'kv-value-input';
@@ -345,7 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 vInp.style.flex = '1';
                 vInp.value = vVal;
                 vInp.addEventListener('input', updateHiddenValue);
-                
+
                 const delRowBtn = document.createElement('button');
                 delRowBtn.type = 'button';
                 delRowBtn.className = 'btn-icon delete-row-btn';
@@ -355,7 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     row.remove();
                     updateHiddenValue();
                 });
-                
+
                 row.appendChild(kInp);
                 row.appendChild(vInp);
                 row.appendChild(delRowBtn);
@@ -363,14 +493,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (window.lucide) lucide.createIcons();
                 updateHiddenValue();
             }
-            
+
             addFieldBtn.addEventListener('click', () => {
                 createKvRow();
             });
-            
+
             // Start with one empty row
             createKvRow();
-            
+
             return group;
         }
 
@@ -418,6 +548,918 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 quillInstances[fullId] = { quill, hidden };
             });
+            return group;
+        }
+
+        // Custom widget overrides: Storage File Browser (browse-file)
+        if (metaType === 'browse-file') {
+            const group = makeGroup(fullId, label, required, true);
+            const isMultiple = !!fieldMeta.multiple;
+            let selectedPaths = [];
+            const allowedExtensions = getAllowedExtensions(fieldMeta, fieldSchema);
+            console.log("[Storage Browser] Field:", name, "allowedExtensions:", allowedExtensions);
+            const matchesExtensions = (fileName, explorer) => {
+                if (explorer && explorer.filterCheckbox && !explorer.filterCheckbox.checked) return true;
+                if (allowedExtensions.length === 0) return true;
+                const lower = fileName.toLowerCase();
+                return allowedExtensions.some(ext => lower.endsWith(ext));
+            };
+
+            // Container
+            const container = document.createElement('div');
+            container.className = 'storage-picker-container';
+
+            // Value input group (input + browse btn)
+            const inputGroup = document.createElement('div');
+            inputGroup.className = 'storage-picker-input-group';
+
+            const inp = document.createElement('input');
+            inp.type = 'text';
+            inp.id = fullId;
+            inp.name = fullId;
+            inp.placeholder = desc || 'Select a file path...';
+            if (required) inp.required = true;
+            if (defaultVal) {
+                inp.value = defaultVal;
+                selectedPaths = defaultVal.split(',').map(s => s.trim()).filter(Boolean);
+            }
+
+            const browseBtn = document.createElement('button');
+            browseBtn.type = 'button';
+            browseBtn.className = 'btn-primary';
+            browseBtn.innerHTML = '<i data-lucide="folder-search"></i> <span>Browse...</span>';
+
+            inputGroup.appendChild(inp);
+            inputGroup.appendChild(browseBtn);
+            container.appendChild(inputGroup);
+
+            // The Drawer/Panel
+            const drawer = document.createElement('div');
+            drawer.className = 'storage-picker-drawer';
+
+            // Tabs Row
+            const tabsRow = document.createElement('div');
+            tabsRow.className = 'storage-tabs';
+
+            const tabOpts = [
+                { id: 'aws', label: 'AWS S3', icon: 'hard-drive' },
+                { id: 'azure', label: 'Azure Blob', icon: 'cloud' },
+                { id: 'local', label: 'Local Device', icon: 'laptop' },
+                { id: 'custom', label: 'Custom Input', icon: 'edit-3' }
+            ];
+
+            const tabButtons = {};
+            const panels = {};
+
+            tabOpts.forEach(opt => {
+                const tabBtn = document.createElement('button');
+                tabBtn.type = 'button';
+                tabBtn.className = 'storage-tab-btn';
+                tabBtn.innerHTML = `<i data-lucide="${opt.icon}"></i> ${opt.label}`;
+                tabsRow.appendChild(tabBtn);
+                tabButtons[opt.id] = tabBtn;
+
+                const panel = document.createElement('div');
+                panel.className = 'storage-panel';
+                drawer.appendChild(panel);
+                panels[opt.id] = panel;
+            });
+
+            drawer.insertBefore(tabsRow, drawer.firstChild);
+            container.appendChild(drawer);
+            group.appendChild(container);
+            addHelp(group, desc);
+
+            // Active tab state
+            let activeTab = 'aws';
+            function switchTab(tabId) {
+                activeTab = tabId;
+                Object.keys(tabButtons).forEach(k => {
+                    tabButtons[k].classList.toggle('active', k === tabId);
+                    panels[k].classList.toggle('active', k === tabId);
+                });
+            }
+
+            Object.keys(tabButtons).forEach(k => {
+                tabButtons[k].addEventListener('click', () => switchTab(k));
+            });
+
+            // Initialize with AWS active
+            switchTab('aws');
+
+            // Global toggle
+            browseBtn.addEventListener('click', () => {
+                drawer.classList.toggle('active');
+                if (window.lucide) lucide.createIcons();
+            });
+
+            // Populate S3 Panel
+            const s3Panel = panels['aws'];
+            const s3SelectRow = document.createElement('div');
+            s3SelectRow.className = 'storage-select-row';
+
+            const s3ConnGroup = document.createElement('div');
+            s3ConnGroup.className = 'form-group';
+            s3ConnGroup.innerHTML = '<label>AWS Connection</label>';
+            const s3ConnSelect = document.createElement('select');
+            s3ConnSelect.innerHTML = '<option value="">Choose AWS connection...</option>';
+            s3ConnGroup.appendChild(s3ConnSelect);
+            s3SelectRow.appendChild(s3ConnGroup);
+
+            const s3BucketGroup = document.createElement('div');
+            s3BucketGroup.className = 'form-group';
+            const s3BucketSelect = createSearchableSelect(s3BucketGroup, '<label>S3 Bucket</label>', 'Select bucket...', 'Search buckets...');
+            s3SelectRow.appendChild(s3BucketGroup);
+            s3Panel.appendChild(s3SelectRow);
+
+            const availableConns = window.CAREGENCE_CONNECTIONS || [];
+            availableConns.forEach(c => {
+                const cType = (c.connection_type || '').toLowerCase();
+                if (cType.includes('aws') || cType.includes('s3')) {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.dataset.name = c.connection_name;
+                    opt.textContent = `${c.connection_name} [${c.connection_type}]`;
+                    s3ConnSelect.appendChild(opt);
+                }
+            });
+
+            // Populate Azure Panel
+            const azPanel = panels['azure'];
+            const azSelectRow = document.createElement('div');
+            azSelectRow.className = 'storage-select-row';
+
+            const azConnGroup = document.createElement('div');
+            azConnGroup.className = 'form-group';
+            azConnGroup.innerHTML = '<label>Azure Connection</label>';
+            const azConnSelect = document.createElement('select');
+            azConnSelect.innerHTML = '<option value="">Choose Azure connection...</option>';
+            azConnGroup.appendChild(azConnSelect);
+            azSelectRow.appendChild(azConnGroup);
+
+            const azContainerGroup = document.createElement('div');
+            azContainerGroup.className = 'form-group';
+            const azContainerSelect = createSearchableSelect(azContainerGroup, '<label>Blob Container</label>', 'Select container...', 'Search containers...');
+            azSelectRow.appendChild(azContainerGroup);
+            azPanel.appendChild(azSelectRow);
+
+            availableConns.forEach(c => {
+                const cType = (c.connection_type || '').toLowerCase();
+                if (cType.includes('azure_blob') || cType.includes('azure_storage') || cType.includes('azureblob')) {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.dataset.name = c.connection_name;
+                    opt.textContent = `${c.connection_name} [${c.connection_type}]`;
+                    azConnSelect.appendChild(opt);
+                }
+            });
+
+            // Explorer Factory Helper
+            function createExplorer(panel) {
+                const explorerBody = document.createElement('div');
+                explorerBody.className = 'storage-browser-body';
+
+                const searchRow = document.createElement('div');
+                searchRow.className = 'storage-browser-search-row';
+                const searchInp = document.createElement('input');
+                searchInp.type = 'text';
+                searchInp.placeholder = 'Search files...';
+                searchRow.appendChild(searchInp);
+
+                const filterCheckbox = document.createElement('input');
+                filterCheckbox.type = 'checkbox';
+                filterCheckbox.checked = true;
+                filterCheckbox.style.cssText = 'cursor: pointer; width: 14px; height: 14px; accent-color: var(--accent); margin: 0;';
+
+                const filterToggle = document.createElement('label');
+                filterToggle.className = 'storage-filter-toggle';
+                filterToggle.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-muted); cursor: pointer; user-select: none; margin-right: 4px; white-space: nowrap;';
+                filterToggle.appendChild(filterCheckbox);
+
+                const toggleSpan = document.createElement('span');
+                toggleSpan.textContent = 'Filter by type';
+                filterToggle.appendChild(toggleSpan);
+
+                searchRow.appendChild(filterToggle);
+                explorerBody.appendChild(searchRow);
+
+                const breadcrumbs = document.createElement('div');
+                breadcrumbs.className = 'storage-breadcrumbs';
+                breadcrumbs.innerHTML = '<span>Root</span>';
+                explorerBody.appendChild(breadcrumbs);
+
+                const tableWrapper = document.createElement('div');
+                tableWrapper.className = 'storage-explorer-table-wrapper';
+                const table = document.createElement('table');
+                table.className = 'storage-explorer-table';
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                `;
+                tableWrapper.appendChild(table);
+                explorerBody.appendChild(tableWrapper);
+                panel.appendChild(explorerBody);
+
+                return { searchInp, filterCheckbox, breadcrumbs, tbody: table.querySelector('tbody'), tableWrapper };
+            }
+
+            const s3Explorer = createExplorer(s3Panel);
+            const azExplorer = createExplorer(azPanel);
+
+            // Local Device Setup
+            const localPanel = panels['local'];
+            const localCard = document.createElement('div');
+            localCard.className = 'storage-local-picker-card';
+            localCard.innerHTML = `
+                <i data-lucide="folder-open"></i>
+                <h3>Select Local Directory</h3>
+                <p>Browse directories and files directly on your local device</p>
+                <span class="storage-local-picker-info">Compatible with all directory selection features</span>
+            `;
+            localPanel.appendChild(localCard);
+            const localExplorer = createExplorer(localPanel);
+            localExplorer.searchInp.closest('.storage-browser-body').style.display = 'none';
+
+            // Custom panel setup
+            const customPanel = panels['custom'];
+            const customGroup = document.createElement('div');
+            customGroup.className = 'form-group full-width';
+            customGroup.innerHTML = '<label>Manual Link or Placeholder</label>';
+            const customInp = document.createElement('input');
+            customInp.type = 'text';
+            customInp.placeholder = 'e.g. {{previous_tool}} or https://myhost.com/data.csv';
+            customInp.value = inp.value;
+            customInp.addEventListener('input', () => {
+                inp.value = customInp.value;
+            });
+            customGroup.appendChild(customInp);
+            customPanel.appendChild(customGroup);
+
+            inp.addEventListener('input', () => {
+                if (activeTab === 'custom') {
+                    customInp.value = inp.value;
+                }
+            });
+
+            // Done button at bottom of drawer
+            const drawerFooter = document.createElement('div');
+            drawerFooter.style.cssText = 'display: flex; justify-content: flex-end; margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 0.75rem;';
+            const doneBtn = document.createElement('button');
+            doneBtn.type = 'button';
+            doneBtn.className = 'btn-primary';
+            doneBtn.innerHTML = '<i data-lucide="check"></i> <span>Done</span>';
+            doneBtn.addEventListener('click', () => {
+                drawer.classList.remove('active');
+            });
+            drawerFooter.appendChild(doneBtn);
+            drawer.appendChild(drawerFooter);
+
+            // ─── AWS S3 logic ───
+            let s3Files = [];
+            let allS3Buckets = [];
+
+            async function fetchS3Buckets(connectionId) {
+                s3BucketSelect.clear();
+                s3BucketSelect.setPlaceholder('Loading buckets...');
+                s3Explorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state">Select a bucket to browse files</td></tr>';
+                try {
+                    const res = await fetch('/api/connection-actions/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            connection_id: connectionId,
+                            action: 'bucket_list',
+                            params: {}
+                        })
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+
+                    if (data.success && data.data && data.data.result) {
+                        allS3Buckets = data.data.result;
+                        s3BucketSelect.clear();
+                        const options = allS3Buckets.map(b => ({
+                            value: b.value || b,
+                            text: b.displayName || b
+                        }));
+                        s3BucketSelect.setOptions(options);
+                    } else {
+                        s3BucketSelect.clear();
+                        s3BucketSelect.setPlaceholder('Failed to load buckets');
+                    }
+                } catch (e) {
+                    s3BucketSelect.clear();
+                    s3BucketSelect.setPlaceholder('Error loading buckets');
+                }
+                if (window.lucide) lucide.createIcons();
+            }
+
+            async function fetchS3Files(connectionId, bucketName) {
+                s3Explorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state"><span class="loading-spinner" style="border-top-color:var(--accent);"></span> Loading files...</td></tr>';
+                try {
+                    const res = await fetch('/api/connection-actions/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            connection_id: connectionId,
+                            action: 'file_list',
+                            params: { bucket_name: bucketName }
+                        })
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+
+                    if (data.success && data.data && data.data.result) {
+                        s3Files = data.data.result.map(f => typeof f === 'object' ? (f.value || f.name) : f);
+                        renderS3Explorer('');
+                    } else {
+                        s3Explorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state">No files found or error occurred</td></tr>';
+                    }
+                } catch (e) {
+                    s3Explorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state">Error loading files</td></tr>';
+                }
+                if (window.lucide) lucide.createIcons();
+            }
+
+            function renderS3Explorer(filter = '') {
+                s3Explorer.tbody.innerHTML = '';
+                const filtered = s3Files.filter(f => f.toLowerCase().includes(filter.toLowerCase()) && matchesExtensions(f, s3Explorer));
+
+                if (filtered.length === 0) {
+                    s3Explorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state"><i data-lucide="folder-open"></i> No files match the filter</td></tr>';
+                    if (window.lucide) lucide.createIcons();
+                    return;
+                }
+
+                filtered.forEach(file => {
+                    const filePath = `s3://${s3BucketSelect.value}/${file}`;
+                    const tr = document.createElement('tr');
+                    tr.className = 'storage-item-row';
+
+                    if (selectedPaths.includes(filePath)) {
+                        tr.classList.add('selected');
+                    }
+
+                    tr.innerHTML = `
+                        <td class="storage-item-name-cell">
+                            <i data-lucide="file" class="storage-item-icon file"></i>
+                            <span>${file}</span>
+                        </td>
+                        <td>File</td>
+                    `;
+                    tr.addEventListener('click', () => {
+                        if (isMultiple) {
+                            const idx = selectedPaths.indexOf(filePath);
+                            if (idx > -1) {
+                                selectedPaths.splice(idx, 1);
+                                tr.classList.remove('selected');
+                            } else {
+                                selectedPaths.push(filePath);
+                                tr.classList.add('selected');
+                            }
+                            inp.value = selectedPaths.join(', ');
+                        } else {
+                            selectedPaths = [filePath];
+                            s3Explorer.tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+                            tr.classList.add('selected');
+                            inp.value = filePath;
+                        }
+                        inp.dispatchEvent(new Event('input', { bubbles: true }));
+                    });
+                    s3Explorer.tbody.appendChild(tr);
+                });
+                if (window.lucide) lucide.createIcons();
+            }
+
+            s3ConnSelect.addEventListener('change', () => {
+                const connId = s3ConnSelect.value;
+                if (connId) fetchS3Buckets(connId);
+                else {
+                    s3BucketSelect.clear();
+                    s3Explorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state">Select connection and bucket to browse</td></tr>';
+                }
+            });
+
+            s3BucketSelect.addEventListener('change', (bucketName) => {
+                const connId = s3ConnSelect.value;
+                if (connId && bucketName) {
+                    s3Explorer.breadcrumbs.innerHTML = `<span class="storage-breadcrumb-item">s3://</span> <span class="storage-breadcrumb-item">${bucketName}</span>`;
+                    fetchS3Files(connId, bucketName);
+                }
+            });
+
+            s3Explorer.searchInp.addEventListener('input', (e) => {
+                renderS3Explorer(e.target.value);
+            });
+            s3Explorer.filterCheckbox.addEventListener('change', () => {
+                renderS3Explorer(s3Explorer.searchInp.value);
+            });
+
+            // ─── Azure Blob logic ───
+            let azFiles = [];
+            let allAzContainers = [];
+
+            async function fetchAzureContainers(connectionId) {
+                azContainerSelect.clear();
+                azContainerSelect.setPlaceholder('Loading containers...');
+                azExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state">Select a container to browse</td></tr>';
+                try {
+                    const res = await fetch('/api/connection-actions/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            connection_id: connectionId,
+                            action: 'container_list',
+                            params: {}
+                        })
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+
+                    if (data.success && data.data && data.data.result) {
+                        allAzContainers = data.data.result;
+                        azContainerSelect.clear();
+                        const options = allAzContainers.map(c => ({
+                            value: c.value || c,
+                            text: c.displayName || c
+                        }));
+                        azContainerSelect.setOptions(options);
+                    } else {
+                        azContainerSelect.clear();
+                        azContainerSelect.setPlaceholder('Failed to load containers');
+                    }
+                } catch (e) {
+                    azContainerSelect.clear();
+                    azContainerSelect.setPlaceholder('Error loading containers');
+                }
+                if (window.lucide) lucide.createIcons();
+            }
+
+            async function fetchAzureBlobs(connectionId, containerName) {
+                azExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state"><span class="loading-spinner" style="border-top-color:var(--accent);"></span> Loading blobs...</td></tr>';
+                try {
+                    const res = await fetch('/api/connection-actions/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            connection_id: connectionId,
+                            action: 'file_list',
+                            params: { container_name: containerName }
+                        })
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+
+                    if (data.success && data.data && data.data.result) {
+                        azFiles = data.data.result.map(f => typeof f === 'object' ? (f.value || f.name) : f);
+                        renderAzureExplorer('');
+                    } else {
+                        azExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state">No blobs found or error occurred</td></tr>';
+                    }
+                } catch (e) {
+                    azExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state">Error loading blobs</td></tr>';
+                }
+                if (window.lucide) lucide.createIcons();
+            }
+
+            function renderAzureExplorer(filter = '') {
+                azExplorer.tbody.innerHTML = '';
+                const filtered = azFiles.filter(f => f.toLowerCase().includes(filter.toLowerCase()) && matchesExtensions(f, azExplorer));
+
+                if (filtered.length === 0) {
+                    azExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state"><i data-lucide="folder-open"></i> No blobs match the filter</td></tr>';
+                    if (window.lucide) lucide.createIcons();
+                    return;
+                }
+
+                filtered.forEach(blob => {
+                    const filePath = `azure://${azContainerSelect.value}/${blob}`;
+                    const tr = document.createElement('tr');
+                    tr.className = 'storage-item-row';
+
+                    if (selectedPaths.includes(filePath)) {
+                        tr.classList.add('selected');
+                    }
+
+                    tr.innerHTML = `
+                        <td class="storage-item-name-cell">
+                            <i data-lucide="file" class="storage-item-icon file"></i>
+                            <span>${blob}</span>
+                        </td>
+                        <td>Blob</td>
+                    `;
+                    tr.addEventListener('click', () => {
+                        if (isMultiple) {
+                            const idx = selectedPaths.indexOf(filePath);
+                            if (idx > -1) {
+                                selectedPaths.splice(idx, 1);
+                                tr.classList.remove('selected');
+                            } else {
+                                selectedPaths.push(filePath);
+                                tr.classList.add('selected');
+                            }
+                            inp.value = selectedPaths.join(', ');
+                        } else {
+                            selectedPaths = [filePath];
+                            azExplorer.tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+                            tr.classList.add('selected');
+                            inp.value = filePath;
+                        }
+                        inp.dispatchEvent(new Event('input', { bubbles: true }));
+                    });
+                    azExplorer.tbody.appendChild(tr);
+                });
+                if (window.lucide) lucide.createIcons();
+            }
+
+            azConnSelect.addEventListener('change', () => {
+                const connId = azConnSelect.value;
+                if (connId) fetchAzureContainers(connId);
+                else {
+                    azContainerSelect.clear();
+                    azExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state">Select connection and container to browse</td></tr>';
+                }
+            });
+
+            azContainerSelect.addEventListener('change', (containerName) => {
+                const connId = azConnSelect.value;
+                if (connId && containerName) {
+                    azExplorer.breadcrumbs.innerHTML = `<span class="storage-breadcrumb-item">azure://</span> <span class="storage-breadcrumb-item">${containerName}</span>`;
+                    fetchAzureBlobs(connId, containerName);
+                }
+            });
+
+            azExplorer.searchInp.addEventListener('input', (e) => {
+                renderAzureExplorer(e.target.value);
+            });
+            azExplorer.filterCheckbox.addEventListener('change', () => {
+                renderAzureExplorer(azExplorer.searchInp.value);
+            });
+
+            // ─── Local Device logic ───
+            let localDirectoryHandle = null;
+            let currentPathParts = [];
+            let currentDirectoryHandle = null;
+
+            let isVirtualLocal = false;
+            let virtualRoot = { name: 'Root', kind: 'directory', children: {} };
+
+            localCard.addEventListener('click', async () => {
+                let success = false;
+                if (typeof window.showDirectoryPicker !== 'undefined') {
+                    try {
+                        localDirectoryHandle = await window.showDirectoryPicker();
+                        currentDirectoryHandle = localDirectoryHandle;
+                        currentPathParts = [];
+                        localCard.style.display = 'none';
+                        localExplorer.searchInp.closest('.storage-browser-body').style.display = 'flex';
+                        isVirtualLocal = false;
+                        await listLocalFiles();
+                        success = true;
+                    } catch (e) {
+                        console.warn('showDirectoryPicker failed or cancelled, trying webkitdirectory fallback...', e);
+                    }
+                }
+
+                if (!success) {
+                    // Fallback to webkitdirectory input (works on insecure contexts & all browsers)
+                    const fileInp = document.createElement('input');
+                    fileInp.type = 'file';
+                    fileInp.webkitdirectory = true;
+                    fileInp.directory = true;
+                    fileInp.multiple = true;
+                    fileInp.style.display = 'none';
+                    document.body.appendChild(fileInp);
+
+                    fileInp.addEventListener('change', () => {
+                        const files = Array.from(fileInp.files);
+                        if (files.length === 0) {
+                            fileInp.remove();
+                            return;
+                        }
+
+                        localCard.style.display = 'none';
+                        localExplorer.searchInp.closest('.storage-browser-body').style.display = 'flex';
+
+                        setupVirtualLocalFileSystem(files);
+                        fileInp.remove();
+                    });
+
+                    fileInp.click();
+                }
+            });
+
+            // Virtual Local Filesystem Helpers (for Firefox, Safari, Insecure contexts/Webviews)
+            function setupVirtualLocalFileSystem(files) {
+                isVirtualLocal = true;
+                let rootDirName = 'Local Folder';
+                if (files[0] && files[0].webkitRelativePath) {
+                    rootDirName = files[0].webkitRelativePath.split('/')[0];
+                }
+
+                virtualRoot = { name: rootDirName, kind: 'directory', children: {} };
+
+                files.forEach(file => {
+                    const parts = file.webkitRelativePath.split('/');
+                    let curr = virtualRoot;
+                    for (let i = 1; i < parts.length; i++) {
+                        const part = parts[i];
+                        const isLast = (i === parts.length - 1);
+                        if (isLast) {
+                            curr.children[part] = {
+                                name: part,
+                                kind: 'file',
+                                fileObject: file,
+                                path: file.webkitRelativePath
+                            };
+                        } else {
+                            if (!curr.children[part]) {
+                                curr.children[part] = {
+                                    name: part,
+                                    kind: 'directory',
+                                    children: {}
+                                };
+                            }
+                            curr = curr.children[part];
+                        }
+                    }
+                });
+
+                localDirectoryHandle = virtualRoot;
+                currentDirectoryHandle = virtualRoot;
+                currentPathParts = [];
+                listLocalFilesVirtual();
+            }
+
+            function listLocalFilesVirtual() {
+                localExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state"><span class="loading-spinner" style="border-top-color:var(--accent);"></span> Scanning folder...</td></tr>';
+                try {
+                    const entries = Object.values(currentDirectoryHandle.children);
+                    entries.sort((a, b) => {
+                        if (a.kind !== b.kind) {
+                            return a.kind === 'directory' ? -1 : 1;
+                        }
+                        return a.name.localeCompare(b.name);
+                    });
+
+                    renderLocalExplorerVirtual(entries);
+                    updateLocalBreadcrumbsVirtual();
+                } catch (e) {
+                    localExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state">Failed to read directory.</td></tr>';
+                }
+                if (window.lucide) lucide.createIcons();
+            }
+
+            function updateLocalBreadcrumbsVirtual() {
+                let html = `<span class="storage-breadcrumb-item" id="local-breadcrumb-virtual-root">local://${virtualRoot.name}</span>`;
+                currentPathParts.forEach((part, index) => {
+                    html += ` / <span class="storage-breadcrumb-item local-breadcrumb-virtual-part" data-index="${index}">${part}</span>`;
+                });
+                localExplorer.breadcrumbs.innerHTML = html;
+
+                document.getElementById('local-breadcrumb-virtual-root').addEventListener('click', () => {
+                    currentDirectoryHandle = virtualRoot;
+                    currentPathParts = [];
+                    listLocalFilesVirtual();
+                });
+
+                localExplorer.breadcrumbs.querySelectorAll('.local-breadcrumb-virtual-part').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const targetIdx = parseInt(el.dataset.index);
+                        currentPathParts = currentPathParts.slice(0, targetIdx + 1);
+
+                        let curr = virtualRoot;
+                        for (const part of currentPathParts) {
+                            curr = curr.children[part];
+                        }
+                        currentDirectoryHandle = curr;
+                        listLocalFilesVirtual();
+                    });
+                });
+            }
+
+            function renderLocalExplorerVirtual(entries, filter = '') {
+                localExplorer.tbody.innerHTML = '';
+                const filtered = entries.filter(e => {
+                    const matchesFilter = e.name.toLowerCase().includes(filter.toLowerCase());
+                    if (!matchesFilter) return false;
+                    if (e.kind === 'directory') return true;
+                    return matchesExtensions(e.name, localExplorer);
+                });
+
+                if (filtered.length === 0) {
+                    localExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state"><i data-lucide="folder-open"></i> Folder is empty</td></tr>';
+                    if (window.lucide) lucide.createIcons();
+                    return;
+                }
+
+                filtered.forEach(entry => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'storage-item-row';
+                    const iconName = entry.kind === 'directory' ? 'folder' : 'file';
+
+                    const relativePath = [...currentPathParts, entry.name].join('/');
+                    const fileFullPath = `local://${virtualRoot.name}/${relativePath}`;
+
+                    if (selectedPaths.includes(fileFullPath)) {
+                        tr.classList.add('selected');
+                    }
+
+                    tr.innerHTML = `
+                        <td class="storage-item-name-cell">
+                            <i data-lucide="${iconName}" class="storage-item-icon ${iconName}"></i>
+                            <span>${entry.name}</span>
+                        </td>
+                        <td>${entry.kind === 'directory' ? 'Folder' : 'File'}</td>
+                    `;
+
+                    tr.addEventListener('click', () => {
+                        if (entry.kind === 'directory') {
+                            currentPathParts.push(entry.name);
+                            currentDirectoryHandle = entry;
+                            listLocalFilesVirtual();
+                        } else {
+                            if (isMultiple) {
+                                const idx = selectedPaths.indexOf(fileFullPath);
+                                if (idx > -1) {
+                                    selectedPaths.splice(idx, 1);
+                                    tr.classList.remove('selected');
+                                } else {
+                                    selectedPaths.push(fileFullPath);
+                                    tr.classList.add('selected');
+                                }
+                                inp.value = selectedPaths.join(', ');
+                            } else {
+                                selectedPaths = [fileFullPath];
+                                localExplorer.tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+                                tr.classList.add('selected');
+                                inp.value = fileFullPath;
+                            }
+                            inp.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    });
+
+                    localExplorer.tbody.appendChild(tr);
+                });
+                if (window.lucide) lucide.createIcons();
+            }
+
+            // Standard Directory Picker Helpers
+            async function listLocalFiles() {
+                localExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state"><span class="loading-spinner" style="border-top-color:var(--accent);"></span> Scanning folder...</td></tr>';
+                try {
+                    const entries = [];
+                    for await (const entry of currentDirectoryHandle.values()) {
+                        entries.push(entry);
+                    }
+
+                    entries.sort((a, b) => {
+                        if (a.kind !== b.kind) {
+                            return a.kind === 'directory' ? -1 : 1;
+                        }
+                        return a.name.localeCompare(b.name);
+                    });
+
+                    renderLocalExplorer(entries);
+                    updateLocalBreadcrumbs();
+                } catch (e) {
+                    localExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state">Failed to read directory. Please grant permission if prompted.</td></tr>';
+                }
+                if (window.lucide) lucide.createIcons();
+            }
+
+            function updateLocalBreadcrumbs() {
+                let html = `<span class="storage-breadcrumb-item" id="local-breadcrumb-root">local://${localDirectoryHandle.name}</span>`;
+                currentPathParts.forEach((part, index) => {
+                    html += ` / <span class="storage-breadcrumb-item local-breadcrumb-part" data-index="${index}">${part}</span>`;
+                });
+                localExplorer.breadcrumbs.innerHTML = html;
+
+                document.getElementById('local-breadcrumb-root').addEventListener('click', async () => {
+                    currentDirectoryHandle = localDirectoryHandle;
+                    currentPathParts = [];
+                    await listLocalFiles();
+                });
+
+                localExplorer.breadcrumbs.querySelectorAll('.local-breadcrumb-part').forEach(el => {
+                    el.addEventListener('click', async () => {
+                        const targetIdx = parseInt(el.dataset.index);
+                        currentPathParts = currentPathParts.slice(0, targetIdx + 1);
+
+                        let curr = localDirectoryHandle;
+                        for (const part of currentPathParts) {
+                            curr = await curr.getDirectoryHandle(part);
+                        }
+                        currentDirectoryHandle = curr;
+                        await listLocalFiles();
+                    });
+                });
+            }
+
+            function renderLocalExplorer(entries, filter = '') {
+                localExplorer.tbody.innerHTML = '';
+                const filtered = entries.filter(e => {
+                    const matchesFilter = e.name.toLowerCase().includes(filter.toLowerCase());
+                    if (!matchesFilter) return false;
+                    if (e.kind === 'directory') return true;
+                    return matchesExtensions(e.name, localExplorer);
+                });
+
+                if (filtered.length === 0) {
+                    localExplorer.tbody.innerHTML = '<tr><td colspan="2" class="storage-empty-state"><i data-lucide="folder-open"></i> Folder is empty</td></tr>';
+                    if (window.lucide) lucide.createIcons();
+                    return;
+                }
+
+                filtered.forEach(entry => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'storage-item-row';
+                    const iconName = entry.kind === 'directory' ? 'folder' : 'file';
+
+                    const relativePath = [...currentPathParts, entry.name].join('/');
+                    const fileFullPath = `local://${localDirectoryHandle.name}/${relativePath}`;
+
+                    if (selectedPaths.includes(fileFullPath)) {
+                        tr.classList.add('selected');
+                    }
+
+                    tr.innerHTML = `
+                        <td class="storage-item-name-cell">
+                            <i data-lucide="${iconName}" class="storage-item-icon ${iconName}"></i>
+                            <span>${entry.name}</span>
+                        </td>
+                        <td>${entry.kind === 'directory' ? 'Folder' : 'File'}</td>
+                    `;
+
+                    tr.addEventListener('click', async () => {
+                        if (entry.kind === 'directory') {
+                            currentPathParts.push(entry.name);
+                            currentDirectoryHandle = await currentDirectoryHandle.getDirectoryHandle(entry.name);
+                            await listLocalFiles();
+                        } else {
+                            if (isMultiple) {
+                                const idx = selectedPaths.indexOf(fileFullPath);
+                                if (idx > -1) {
+                                    selectedPaths.splice(idx, 1);
+                                    tr.classList.remove('selected');
+                                } else {
+                                    selectedPaths.push(fileFullPath);
+                                    tr.classList.add('selected');
+                                }
+                                inp.value = selectedPaths.join(', ');
+                            } else {
+                                selectedPaths = [fileFullPath];
+                                localExplorer.tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+                                tr.classList.add('selected');
+                                inp.value = fileFullPath;
+                            }
+                            inp.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    });
+
+                    localExplorer.tbody.appendChild(tr);
+                });
+                if (window.lucide) lucide.createIcons();
+            }
+
+            localExplorer.searchInp.addEventListener('input', async (e) => {
+                if (isVirtualLocal) {
+                    const entries = Object.values(currentDirectoryHandle.children);
+                    entries.sort((a, b) => {
+                        if (a.kind !== b.kind) {
+                            return a.kind === 'directory' ? -1 : 1;
+                        }
+                        return a.name.localeCompare(b.name);
+                    });
+                    renderLocalExplorerVirtual(entries, e.target.value);
+                } else {
+                    const entries = [];
+                    for await (const entry of currentDirectoryHandle.values()) {
+                        entries.push(entry);
+                    }
+                    entries.sort((a, b) => {
+                        if (a.kind !== b.kind) {
+                            return a.kind === 'directory' ? -1 : 1;
+                        }
+                        return a.name.localeCompare(b.name);
+                    });
+                    renderLocalExplorer(entries, e.target.value);
+                }
+            });
+
+            localExplorer.filterCheckbox.addEventListener('change', async () => {
+                if (isVirtualLocal) {
+                    listLocalFilesVirtual();
+                } else {
+                    await listLocalFiles();
+                }
+            });
+
             return group;
         }
 
@@ -611,7 +1653,7 @@ document.addEventListener('DOMContentLoaded', () => {
         grid.className = 'fields-grid';
         const metaFields = (window.TOOL_META && window.TOOL_META.fields) || {};
 
-        console.log("props:",props)
+        console.log("props:", props)
         console.log("window.TOOL_META.fields:", window.TOOL_META.fields)
 
 
@@ -689,9 +1731,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const fieldMeta = metaFields[name] || {};
+            const fieldMeta = resolveFieldMeta(name, metaFields);
             console.log("fieldMeta:", fieldMeta)
-            console.log("nestedResolved:",nestedResolved)
+            console.log("nestedResolved:", nestedResolved)
             const fieldEl = buildField(name, nestedResolved, reqList, defs, namePrefix, fieldMeta);
             if (fieldEl) grid.appendChild(fieldEl);
         });
@@ -940,8 +1982,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const section = document.createElement('div');
             section.className = 'schema-section';
-            console.log("resolved:",resolved)
-            const fieldEl = buildField(propName, resolved, required, defs);
+            console.log("resolved:", resolved)
+            const fieldMeta = resolveFieldMeta(propName, meta.fields);
+            const fieldEl = buildField(propName, resolved, required, defs, '', fieldMeta);
             if (fieldEl) section.appendChild(fieldEl);
             root.appendChild(section);
         });
@@ -961,7 +2004,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.forEach((value, key) => {
             if (!key) return;
             let parsed = value;
-            
+
             if (value instanceof File) {
                 if (!value.name) return;
                 parsed = value.name;
