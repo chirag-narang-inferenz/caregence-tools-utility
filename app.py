@@ -230,8 +230,6 @@ async def fetch_tools_via_mcp(sse_url: str):
                             tools_list.append(tool_dict)
                         
                         CURRENT_SSE_URL = url
-                        # with open("tools1.json","w") as file:
-                        #     json.dump(tools_list, file, indent=2)
                         return tools_list
             except Exception as e:
                 print(f"[MCP] streamablehttp_client failed for {url}: {e}")
