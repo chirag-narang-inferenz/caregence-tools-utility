@@ -365,7 +365,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
                     "type": ["connection"],
                     "title": `Select ${displayConnType} Connection`,
                     "required": true,
-                    "description": `Choose a ${displayConnType} connection...`,
+                    "description": `Choose a ${displayConnType} connection.`,
                     "propertyName": propName,
                     "connection_value": connType
                 });
