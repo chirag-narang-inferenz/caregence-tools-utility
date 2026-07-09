@@ -488,6 +488,9 @@ function generateDisplayProperties(schema, skipFields, meta) {
                 if (origDefault !== undefined) node.default = origDefault;
                 else if (pResolved.default !== undefined) node.default = pResolved.default;
                 if (pResolved.const !== undefined) node.const = pResolved.const;
+                const metaField = meta && meta.fields && meta.fields[name];
+                const inputOptions = pResolved.input_options || propSchema.input_options || (metaField && metaField.input_options);
+                if (inputOptions !== undefined) node.input_options = inputOptions;
 
                 if (pResolved.discriminator || pResolved.oneOf || (pResolved.type === 'object' && pResolved.properties)) {
                     node.properties = parseSchema(pResolved, '', null, parentPath ? parentPath + '.' + name : name, reqList.includes(name));
