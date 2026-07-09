@@ -5,13 +5,13 @@ function slugify(s) {
 function connectionMatchesSchemaContext(c, chosen, def, namePrefix = '') {
     if (!c || !c.dependency || !chosen) return false;
     if (slugify(c.dependency) !== slugify(chosen)) return false;
-    
+
     const cleanSubDep = slugify(c.sub_dependency || '');
     const cleanType = slugify(c.type || '');
 
     const cleanPrefix = slugify(namePrefix || '');
     console.log("cleanPrefix:", cleanPrefix)
-    
+
     // Context filter based on property parent name
     // if (cleanPrefix) {
     //     if (cleanPrefix.includes('llm')) {
@@ -28,37 +28,37 @@ function connectionMatchesSchemaContext(c, chosen, def, namePrefix = '') {
     if (cleanPrefix) {
         if (cleanPrefix.includes('llm')) {
             const isLLM = cleanSubDep.includes('credential') || cleanSubDep.includes('openai') || cleanSubDep.includes('bedrock') ||
-                          cleanType.includes('openai') || cleanType.includes('bedrock') || cleanType.includes('llm');
+                cleanType.includes('openai') || cleanType.includes('bedrock') || cleanType.includes('llm');
             if (!isLLM) return false;
         } else if (cleanPrefix.includes('source') || cleanPrefix.includes('operations')) {
             const isStorageOrOperations = cleanSubDep.includes('config') || cleanSubDep.includes('storage') || cleanSubDep.includes('s3') || cleanSubDep.includes('blob') ||
-                                          cleanType.includes('storage') || cleanType.includes('s3') || cleanType.includes('email') || cleanType.includes('cloud') ||
-                                          cleanType.includes('postgres') || cleanType.includes('mysql') || cleanType.includes('snowflake') || cleanType.includes('databricks') ||
-                                          cleanType.includes('db') || cleanType.includes('database') || cleanType.includes('sql');
+                cleanType.includes('storage') || cleanType.includes('s3') || cleanType.includes('email') || cleanType.includes('cloud') ||
+                cleanType.includes('postgres') || cleanType.includes('mysql') || cleanType.includes('snowflake') || cleanType.includes('databricks') ||
+                cleanType.includes('db') || cleanType.includes('database') || cleanType.includes('sql');
             if (!isStorageOrOperations) return false;
         }
     }
-    
+
     if (!c.sub_dependency) return true;
-    
+
     const cleanTitle = slugify((def && def.title) || '');
     if (cleanSubDep === cleanTitle || (cleanTitle && (cleanTitle.includes(cleanSubDep) || cleanSubDep.includes(cleanTitle)))) {
         return true;
     }
-    
+
     // Check property fields overlap
     if (def && def.properties) {
         const propKeys = Object.keys(def.properties).map(k => slugify(k));
         const serviceSpecificFields = ['bucket', 'key', 'container', 'blob', 'azure_openai_endpoint', 'aws_access_key_id'];
         const connFields = (c.fields || []).map(f => slugify(f));
-        
+
         const allMatch = connFields.every(f => propKeys.includes(f));
         if (allMatch) return true;
-        
+
         const hasSpecificMatch = connFields.some(f => serviceSpecificFields.includes(f) && propKeys.includes(f));
         if (hasSpecificMatch) return true;
     }
-    
+
     return false;
 }
 
@@ -66,12 +66,12 @@ function resolveDef(ref, defs) {
     if (!ref || !defs) return null;
     const key = ref.split('/').pop();
     if (defs[key]) return defs[key];
-    
+
     // Case-insensitive fallback
     const keyLower = key.toLowerCase();
     const foundKey = Object.keys(defs).find(k => k.toLowerCase() === keyLower);
     if (foundKey) return defs[foundKey];
-    
+
     return null;
 }
 
@@ -132,35 +132,31 @@ const ALWAYS_SHOW_FIELDS = new Set([]);
 function isCredentialField(fieldName) {
     if (!fieldName) return false;
     const slug = slugify(fieldName);
-    
+
     // Explicitly ignore workflow tracking IDs
     if (slug === 'workflow_id' || slug === 'execution_id') return false;
 
-    const CREDENTIAL_KEYWORDS = [
-        'key', 'secret', 'token', 'password', 'credential', 'auth',
-        'endpoint', 'deployment', 'api_version', 'region_name',
-        'client_id', 'tenant_id', 'account_sid', 'connection', 'string', 'version', 'region'
-    ];
+    const CREDENTIAL_KEYWORDS = [];
     return CREDENTIAL_KEYWORDS.some(kw => slug.includes(kw)) ||
-           slug.endsWith('_id') ||
-           slug.endsWith('_key') ||
-           slug.endsWith('_token') ||
-           slug.endsWith('_secret') ||
-           slug.endsWith('_password');
+        // slug.endsWith('_id') ||
+        // slug.endsWith('_key') ||
+        slug.endsWith('_token') ||
+        slug.endsWith('_secret') ||
+        slug.endsWith('_password');
 }
 
 function inferConnectionType(fields, fallback) {
     const availableConns = window.CAREGENCE_CONNECTIONS || [];
-    
+
     for (const f of fields) {
         const parts = f.split('_');
         if (parts.length > 1) {
             const prefix = parts[0].toLowerCase();
-            
+
             // Check if prefix matches any connection type in CAREGENCE_CONNECTIONS
             const match = availableConns.find(c => (c.connection_type || '').toLowerCase() === prefix);
             if (match) return match.connection_type;
-            
+
             // Special handling for compound names like azure_openai -> Azure_OpenAI or aws_bedrock -> AWS_Bedrock
             const matchCompound = availableConns.find(c => {
                 const cTypeLower = (c.connection_type || '').toLowerCase();
@@ -173,15 +169,15 @@ function inferConnectionType(fields, fallback) {
 }
 
 function autoDiscoverConnections(schemaObj) {
-    const defs = schemaObj.$defs || 
-                 schemaObj.definitions || 
-                 (schemaObj.properties && (schemaObj.properties.$defs || schemaObj.properties.definitions)) || 
-                 {};
+    const defs = schemaObj.$defs ||
+        schemaObj.definitions ||
+        (schemaObj.properties && (schemaObj.properties.$defs || schemaObj.properties.definitions)) ||
+        {};
     const connections = [];
 
     function scanSchema(s, opValue = null) {
         if (!s) return;
-        
+
         let resolved = s;
         if (s.$ref) {
             resolved = resolveDef(s.$ref, defs) || s;
@@ -212,7 +208,7 @@ function autoDiscoverConnections(schemaObj) {
                     });
                 }
             }
-            
+
             Object.values(resolved.properties).forEach(prop => scanSchema(prop, opValue));
         }
 
@@ -279,9 +275,9 @@ function autoDiscoverConnections(schemaObj) {
 
 function initializeConnectionsMeta(schema) {
     if (!window.TOOL_META) window.TOOL_META = {};
-    
+
     // If the tool already provides specific connections, respect them and skip auto-discovery
-    if (window.TOOL_META.connection_name && 
+    if (window.TOOL_META.connection_name &&
         (Array.isArray(window.TOOL_META.connection_name) ? window.TOOL_META.connection_name.length > 0 : true)) {
         if (!Array.isArray(window.TOOL_META.connection_name)) {
             window.TOOL_META.connection_name = [window.TOOL_META.connection_name];
@@ -292,8 +288,8 @@ function initializeConnectionsMeta(schema) {
     window.TOOL_META.connection_name = [];
     const discoveredConnections = autoDiscoverConnections(schema);
     discoveredConnections.forEach(d => {
-        const exists = window.TOOL_META.connection_name.some(c => 
-            c.dependency === d.dependency || 
+        const exists = window.TOOL_META.connection_name.some(c =>
+            c.dependency === d.dependency ||
             (c.type && c.type.toLowerCase() === d.type.toLowerCase())
         );
         if (!exists) {
@@ -305,7 +301,7 @@ function initializeConnectionsMeta(schema) {
 function isAlwaysShow(name, fullId = '', dotId = '') {
     const meta = window.TOOL_META || {};
     const fieldNames = [name, fullId, dotId].filter(Boolean);
-    
+
     if (meta.connection_name) {
         const rawConns = Array.isArray(meta.connection_name) ? meta.connection_name : [meta.connection_name];
         const connectionFields = [];
@@ -314,8 +310,8 @@ function isAlwaysShow(name, fullId = '', dotId = '') {
             const fields = Array.isArray(rawFields) ? rawFields : String(rawFields).split(',').map(s => s.trim()).filter(Boolean);
             fields.forEach(f => connectionFields.push(f));
         });
-        
-        const isMappedToConnection = fieldNames.some(fn => 
+
+        const isMappedToConnection = fieldNames.some(fn =>
             connectionFields.some(cf => fieldsMatch(fn, cf))
         );
         if (isMappedToConnection) {
@@ -323,16 +319,16 @@ function isAlwaysShow(name, fullId = '', dotId = '') {
         }
     }
 
-    return fieldNames.some(f => 
+    return fieldNames.some(f =>
         Array.from(ALWAYS_SHOW_FIELDS).some(always => fieldsMatch(f, always))
     );
 }
 
 function generateDisplayProperties(schema, skipFields, meta) {
-    const defs = schema.$defs || 
-                 schema.definitions || 
-                 (schema.properties && (schema.properties.$defs || schema.properties.definitions)) || 
-                 {};
+    const defs = schema.$defs ||
+        schema.definitions ||
+        (schema.properties && (schema.properties.$defs || schema.properties.definitions)) ||
+        {};
 
     function resolve(s) {
         return s.$ref ? (resolveDef(s.$ref, defs) || s) : s;
@@ -355,7 +351,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
             } else {
                 shouldInclude = connectionMatchesSchemaContext(c, opValue, resolvedSchema, namePrefix);
             }
-            
+
             if (shouldInclude) {
                 const connType = c.type || meta.category || 'Service';
                 const displayConnType = Array.isArray(connType) ? connType.join(', ') : connType;
@@ -374,7 +370,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
         return nodes;
     }
 
-    function parseSchema(currentSchema, prefix = '', skipProp = null, parentPath = '') {
+    function parseSchema(currentSchema, prefix = '', skipProp = null, parentPath = '', parentRequired = false) {
         console.log("currentSchema:", currentSchema)
         if (!currentSchema) return [];
         let resolved = resolve(currentSchema);
@@ -383,7 +379,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
         let nodes = [];
 
         if (resolved.discriminator) {
-        
+
             const propName = resolved.discriminator.propertyName;
             console.log("resolved.discriminator:", resolved.discriminator)
             console.log("propName:", propName)
@@ -408,13 +404,13 @@ function generateDisplayProperties(schema, skipFields, meta) {
                     }
                 });
             }
-            
+
             let discNode = {
                 name: propName,
                 propertyName: prefix + propName,
                 type: ['string'],
                 title: resolved.display_title || propName,
-                required: true,
+                required: parentPath === '' ? true : parentRequired,
                 enum: Object.keys(mapping),
                 isDiscriminator: true,
                 mapping: {}
@@ -423,7 +419,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
             Object.entries(mapping).forEach(([val, refSchema]) => {
                 const schemaToParse = typeof refSchema === 'string' ? { $ref: refSchema } : refSchema;
                 const resolvedSchema = resolve(schemaToParse);
-                let childNodes = parseSchema(schemaToParse, prefix, propName, parentPath ? parentPath + '.' + propName : propName);
+                let childNodes = parseSchema(schemaToParse, prefix, propName, parentPath ? parentPath + '.' + propName : propName, parentRequired);
                 let contextualConns = getConnectionsFor(val, resolvedSchema, parentPath ? parentPath + '.' + propName : propName);
                 discNode.mapping[val] = [...contextualConns, ...childNodes];
             });
@@ -443,7 +439,7 @@ function generateDisplayProperties(schema, skipFields, meta) {
 
                 let pResolved = resolve(propSchema);
                 console.log("pResolved:", pResolved)
-                
+
                 // Connection checking at this level is handled globally via dependencies above.
 
                 const origTitle = pResolved.display_title;
@@ -494,11 +490,11 @@ function generateDisplayProperties(schema, skipFields, meta) {
                 if (pResolved.const !== undefined) node.const = pResolved.const;
 
                 if (pResolved.discriminator || pResolved.oneOf || (pResolved.type === 'object' && pResolved.properties)) {
-                    node.properties = parseSchema(pResolved, '', null, parentPath ? parentPath + '.' + name : name);
+                    node.properties = parseSchema(pResolved, '', null, parentPath ? parentPath + '.' + name : name, reqList.includes(name));
                 } else if (pResolved.type === 'array' && pResolved.items) {
                     let itemsRes = resolve(pResolved.items);
                     if (itemsRes.properties || itemsRes.discriminator || itemsRes.oneOf) {
-                        node.items = parseSchema(itemsRes, '', null, parentPath ? parentPath + '.' + name : name);
+                        node.items = parseSchema(itemsRes, '', null, parentPath ? parentPath + '.' + name : name, true);
                     }
                 }
 
