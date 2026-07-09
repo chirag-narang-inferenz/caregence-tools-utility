@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const lbl = document.createElement('label');
         lbl.setAttribute('for', name || label);
-        lbl.innerHTML = `${label}${required ? ' <span class="required">*</span>' : ''}`;
+        lbl.innerHTML = label;
         group.appendChild(lbl);
         return group;
     }
@@ -36,11 +36,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const connTypes = Array.isArray(connMeta.type) ? connMeta.type : [connMeta.type || 'Service'];
         const displayConnType = connTypes.join(' or ');
 
-        const group = makeGroup(name, `Select ${displayConnType} Connection`, true);
+        const group = makeGroup(name, `Select ${displayConnType} Connection`, false);
         const sel = document.createElement('select');
         sel.id = name;
         sel.name = name;
-        sel.required = true;
         sel.innerHTML = `<option value="">Choose a ${displayConnType} connection...</option>`;
 
         const availableConns = window.CAREGENCE_CONNECTIONS || [];
@@ -63,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ─── Build field for a single property ─────────────────────────────────────
     function buildField(name, fieldSchema, requiredList, defs, namePrefix = '', fieldMeta = {}) {
-        const required = requiredList && requiredList.includes(name);
+        const required = false;
         const fullId = namePrefix ? `${namePrefix}.${name}` : name;
 
         let effectiveSchema = fieldSchema;
@@ -78,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-        const label =  effectiveSchema.display_title || fieldSchema.display_title ||effectiveSchema.title || fieldSchema.title || name 
+        const label = effectiveSchema.display_title || fieldSchema.display_title || effectiveSchema.title || fieldSchema.title || name
         console.log("label:", label)
         const desc = effectiveSchema.description || fieldSchema.description || '';
         const defaultVal = effectiveSchema.default !== undefined ? effectiveSchema.default : fieldSchema.default;
@@ -102,33 +101,33 @@ document.addEventListener('DOMContentLoaded', () => {
             const group = makeGroup(fullId, label, required, true);
             const container = document.createElement('div');
             container.className = 'dynamic-array-container';
-            
+
             const listWrapper = document.createElement('div');
             listWrapper.className = 'dynamic-array-list';
             container.appendChild(listWrapper);
-            
+
             const addBtn = document.createElement('button');
             addBtn.type = 'button';
             addBtn.className = 'btn-secondary add-array-item-btn';
             addBtn.style.cssText = 'margin-top: 0.5rem;';
             addBtn.innerHTML = `<i data-lucide="plus" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"></i> <span>${fieldMeta.add_button_label || '+ Add Item'}</span>`;
             container.appendChild(addBtn);
-            
+
             const hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.name = fullId;
             hidden.value = '[]';
             container.appendChild(hidden);
-            
+
             group.appendChild(container);
             addHelp(group, desc);
-            
+
             function updateHiddenValue() {
                 const items = [];
                 listWrapper.querySelectorAll('.dynamic-array-card').forEach(card => {
                     const phone = card.querySelector('.phone-input')?.value.trim() || '';
                     const email = card.querySelector('.email-input')?.value.trim() || '';
-                    
+
                     const data = {};
                     card.querySelectorAll('.kv-row').forEach(row => {
                         const k = row.querySelector('.kv-key-input')?.value.trim() || '';
@@ -137,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             data[k] = v;
                         }
                     });
-                    
+
                     const item = { data };
                     if (hasPhone && phone) item.phone = phone;
                     if (hasEmail && email) item.email = email;
@@ -146,12 +145,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 hidden.value = JSON.stringify(items);
                 hidden.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            
+
             function createCard(initialData = { phone: '', email: '', data: {} }) {
                 const card = document.createElement('div');
                 card.className = 'dynamic-array-card glass';
                 card.style.cssText = 'border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; position: relative; background: var(--card-bg);';
-                
+
                 const deleteCardBtn = document.createElement('button');
                 deleteCardBtn.type = 'button';
                 deleteCardBtn.className = 'btn-icon delete-card-btn';
@@ -162,12 +161,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateHiddenValue();
                 });
                 card.appendChild(deleteCardBtn);
-                
+
                 const cardGrid = document.createElement('div');
                 cardGrid.className = 'fields-grid';
                 const columns = (hasPhone && hasEmail) ? '1fr 1fr' : '1fr';
                 cardGrid.style.cssText = `display: grid; grid-template-columns: ${columns}; gap: 1rem; margin-top: 1rem;`;
-                
+
                 let gridHasFields = false;
                 if (hasPhone) {
                     const phoneGroup = document.createElement('div');
@@ -183,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     cardGrid.appendChild(phoneGroup);
                     gridHasFields = true;
                 }
-                
+
                 if (hasEmail) {
                     const emailGroup = document.createElement('div');
                     emailGroup.className = 'form-group';
@@ -198,32 +197,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     cardGrid.appendChild(emailGroup);
                     gridHasFields = true;
                 }
-                
+
                 if (gridHasFields) {
                     card.appendChild(cardGrid);
                 }
-                
+
                 // Data Group (Key-Value)
                 const dataGroup = document.createElement('div');
                 dataGroup.className = 'form-group full-width';
                 dataGroup.style.marginTop = '1rem';
                 dataGroup.innerHTML = '<label>Personalization Data</label>';
-                
+
                 const kvContainer = document.createElement('div');
                 kvContainer.className = 'kv-rows-container';
                 dataGroup.appendChild(kvContainer);
-                
+
                 const addFieldBtn = document.createElement('button');
                 addFieldBtn.type = 'button';
                 addFieldBtn.className = 'btn-secondary add-field-btn';
                 addFieldBtn.style.cssText = 'padding: 0.25rem 0.75rem; font-size: 0.8rem; margin-top: 0.5rem;';
                 addFieldBtn.innerHTML = '<i data-lucide="plus" style="width:12px;height:12px;vertical-align:middle;margin-right:2px;"></i> Add Field';
-                
+
                 function createKvRow(kVal = '', vVal = '') {
                     const row = document.createElement('div');
                     row.className = 'kv-row';
                     row.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center;';
-                    
+
                     const kInp = document.createElement('input');
                     kInp.type = 'text';
                     kInp.className = 'kv-key-input';
@@ -231,7 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     kInp.style.flex = '1';
                     kInp.value = kVal;
                     kInp.addEventListener('input', updateHiddenValue);
-                    
+
                     const vInp = document.createElement('input');
                     vInp.type = 'text';
                     vInp.className = 'kv-value-input';
@@ -239,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     vInp.style.flex = '1';
                     vInp.value = vVal;
                     vInp.addEventListener('input', updateHiddenValue);
-                    
+
                     const delRowBtn = document.createElement('button');
                     delRowBtn.type = 'button';
                     delRowBtn.className = 'btn-icon delete-row-btn';
@@ -249,40 +248,40 @@ document.addEventListener('DOMContentLoaded', () => {
                         row.remove();
                         updateHiddenValue();
                     });
-                    
+
                     row.appendChild(kInp);
                     row.appendChild(vInp);
                     row.appendChild(delRowBtn);
                     kvContainer.appendChild(row);
                     if (window.lucide) lucide.createIcons();
                 }
-                
+
                 // Populate initial data fields
                 if (initialData.data && Object.keys(initialData.data).length > 0) {
                     Object.entries(initialData.data).forEach(([k, v]) => {
                         createKvRow(k, v);
                     });
                 }
-                
+
                 addFieldBtn.addEventListener('click', () => {
                     createKvRow();
                 });
-                
+
                 dataGroup.appendChild(addFieldBtn);
                 card.appendChild(dataGroup);
-                
+
                 listWrapper.appendChild(card);
                 if (window.lucide) lucide.createIcons();
                 updateHiddenValue();
             }
-            
+
             addBtn.addEventListener('click', () => {
                 createCard();
             });
-            
+
             // Initial item
             createCard();
-            
+
             return group;
         }
 
@@ -291,27 +290,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const group = makeGroup(fullId, label, required, true);
             const container = document.createElement('div');
             container.className = 'key-value-container';
-            
+
             const rowsContainer = document.createElement('div');
             rowsContainer.className = 'kv-rows-container';
             container.appendChild(rowsContainer);
-            
+
             const addFieldBtn = document.createElement('button');
             addFieldBtn.type = 'button';
             addFieldBtn.className = 'btn-secondary add-field-btn';
             addFieldBtn.style.cssText = 'margin-top: 0.5rem;';
             addFieldBtn.innerHTML = `<i data-lucide="plus" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"></i> <span>${fieldMeta.add_button_label || '+ Add Field'}</span>`;
             container.appendChild(addFieldBtn);
-            
+
             const hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.name = fullId;
             hidden.value = '{}';
             container.appendChild(hidden);
-            
+
             group.appendChild(container);
             addHelp(group, desc);
-            
+
             function updateHiddenValue() {
                 const data = {};
                 rowsContainer.querySelectorAll('.kv-row').forEach(row => {
@@ -324,12 +323,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 hidden.value = JSON.stringify(data);
                 hidden.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            
+
             function createKvRow(kVal = '', vVal = '') {
                 const row = document.createElement('div');
                 row.className = 'kv-row';
                 row.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center;';
-                
+
                 const kInp = document.createElement('input');
                 kInp.type = 'text';
                 kInp.className = 'kv-key-input';
@@ -337,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 kInp.style.flex = '1';
                 kInp.value = kVal;
                 kInp.addEventListener('input', updateHiddenValue);
-                
+
                 const vInp = document.createElement('input');
                 vInp.type = 'text';
                 vInp.className = 'kv-value-input';
@@ -345,7 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 vInp.style.flex = '1';
                 vInp.value = vVal;
                 vInp.addEventListener('input', updateHiddenValue);
-                
+
                 const delRowBtn = document.createElement('button');
                 delRowBtn.type = 'button';
                 delRowBtn.className = 'btn-icon delete-row-btn';
@@ -355,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     row.remove();
                     updateHiddenValue();
                 });
-                
+
                 row.appendChild(kInp);
                 row.appendChild(vInp);
                 row.appendChild(delRowBtn);
@@ -363,14 +362,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (window.lucide) lucide.createIcons();
                 updateHiddenValue();
             }
-            
+
             addFieldBtn.addEventListener('click', () => {
                 createKvRow();
             });
-            
+
             // Start with one empty row
             createKvRow();
-            
+
             return group;
         }
 
@@ -611,9 +610,9 @@ document.addEventListener('DOMContentLoaded', () => {
         grid.className = 'fields-grid';
         const metaFields = (window.TOOL_META && window.TOOL_META.fields) || {};
 
-        console.log("props:",props)
+        console.log("props:", props)
         console.log("window.TOOL_META.fields:", window.TOOL_META.fields)
-
+        console.log('reqListreqListreqList', reqList);
 
         Object.entries(props).forEach(([name, fieldSchema]) => {
             const fullId = namePrefix ? `${namePrefix}.${name}` : name;
@@ -691,7 +690,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const fieldMeta = metaFields[name] || {};
             console.log("fieldMeta:", fieldMeta)
-            console.log("nestedResolved:",nestedResolved)
+            console.log("nestedResolved:", nestedResolved)
             const fieldEl = buildField(name, nestedResolved, reqList, defs, namePrefix, fieldMeta);
             if (fieldEl) grid.appendChild(fieldEl);
         });
@@ -940,7 +939,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const section = document.createElement('div');
             section.className = 'schema-section';
-            console.log("resolved:",resolved)
+            console.log("resolved:", resolved)
             const fieldEl = buildField(propName, resolved, required, defs);
             if (fieldEl) section.appendChild(fieldEl);
             root.appendChild(section);
@@ -958,10 +957,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const formData = new FormData(toolForm);
         const nested = {};
+        const properties = schema.properties || {};
+        const allowedKeys = new Set(Object.keys(properties));
+
         formData.forEach((value, key) => {
             if (!key) return;
+
+            const topLevelKey = key.split('.')[0];
+            const isConnectionField = 
+                topLevelKey === 'connection_name' || 
+                topLevelKey.startsWith('connection_name_') || 
+                topLevelKey === 'connection_id' || 
+                topLevelKey === 'Credential' || 
+                topLevelKey.startsWith('Credential_');
+            const isMcpField = allowedKeys.has(topLevelKey);
+
+            if (!isConnectionField && !isMcpField) {
+                return;
+            }
+
             let parsed = value;
-            
+
             if (value instanceof File) {
                 if (!value.name) return;
                 parsed = value.name;
